@@ -7,24 +7,24 @@ export interface FarmConfig {
   shuffle_cities: boolean;
 }
 
-export interface TransportConfig {
+export interface MarketConfig {
   enabled: boolean;
-  target_town_id: string | number;
-  max_percent: number;
-  interval_seconds: number;
+  target_town_id: string;
   send_wood: boolean;
   send_stone: boolean;
   send_silver: boolean;
-  per_send_limit: number;
-  delay_seconds: number;
-  divide_equally: boolean;
+  max_storage_percent: number;
+  max_send_per_trip: number;
+  check_interval: number;
+  delay_between_trips: number;
+  split_equally: boolean;
 }
 
 export interface BotConfig {
   enabled: boolean;
-  farm_level: FarmLevel;
+  farm_level?: FarmLevel; // Optional in JSON, used for UI state
   farm: FarmConfig;
-  transports: TransportConfig;
+  market: MarketConfig;
 }
 
 export const DEFAULT_CONFIG: BotConfig = {
@@ -36,16 +36,16 @@ export const DEFAULT_CONFIG: BotConfig = {
     interval_max: 637,
     shuffle_cities: true,
   },
-  transports: {
+  market: {
     enabled: false,
     target_town_id: "",
-    max_percent: 100,
-    interval_seconds: 300,
     send_wood: true,
     send_stone: true,
     send_silver: true,
-    per_send_limit: 5000,
-    delay_seconds: 120,
-    divide_equally: true,
+    max_storage_percent: 100,
+    max_send_per_trip: 5000,
+    check_interval: 300,
+    delay_between_trips: 120,
+    split_equally: true,
   },
 };

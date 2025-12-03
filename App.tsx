@@ -1,16 +1,54 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Save, Download, Terminal, Copy, Upload, AlertCircle } from 'lucide-react';
+import { Settings, Save, Download, Terminal, Copy, Upload, AlertCircle, Loader2 } from 'lucide-react';
 import { BotConfig, DEFAULT_CONFIG, FarmLevel } from './types';
-import { GeneralSection, FarmSection, TransportSection, FutureSection, ProfileSection } from './components/ConfigSections';
+import { GeneralSection, FarmSection, MarketSection, FutureSection, ProfileSection } from './components/ConfigSections';
 import { TextArea } from './components/UI';
 
 const App: React.FC = () => {
   const [config, setConfig] = useState<BotConfig>(DEFAULT_CONFIG);
+  const [loading, setLoading] = useState(true);
   const [isSaved, setIsSaved] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [importJson, setImportJson] = useState('');
   const [importError, setImportError] = useState('');
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [toastMessage, setToastMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
+
+  // --- Load Config from GitHub API on Mount ---
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const res = await fetch('/api/get-config');
+        const data = await res.json();
+        
+        if (data.success && data.config) {
+          // Merge with default to ensure all fields exist if JSON is partial
+          setConfig({
+            ...DEFAULT_CONFIG,
+            ...data.config,
+            // Ensure nested objects merge correctly
+            farm: { ...DEFAULT_CONFIG.farm, ...(data.config.farm || {}) },
+            market: { ...DEFAULT_CONFIG.market, ...(data.config.market || {}) },
+          });
+        } else {
+          console.error("Failed to load config:", data.error);
+          showToast('error', 'Falha ao carregar configuração do GitHub');
+        }
+      } catch (error) {
+        console.error("Network error:", error);
+        showToast('error', 'Erro de conexão ao buscar configuração');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchConfig();
+  }, []);
+
+  const showToast = (type: 'success' | 'error', text: string) => {
+    setToastMessage({ type, text });
+    setTimeout(() => setToastMessage(null), 4000);
+  };
 
   // --- Logic for Presets ---
   const handleLevelChange = (level: FarmLevel) => {
@@ -41,7 +79,7 @@ const App: React.FC = () => {
     setIsSaved(false);
   };
 
-  const updateNestedConfig = (section: 'farm' | 'transports', key: string, value: any) => {
+  const updateNestedConfig = (section: 'farm' | 'market', key: string, value: any) => {
     setConfig(prev => ({
       ...prev,
       [section]: {
@@ -55,20 +93,47 @@ const App: React.FC = () => {
   // --- Validation ---
   useEffect(() => {
     const errors: Record<string, string> = {};
-    const { farm, transports } = config;
+    const { farm, market } = config;
 
     if (farm.interval_min <= 0) errors['farm.interval_min'] = 'Deve ser maior que 0';
     if (farm.interval_max < farm.interval_min) errors['farm.interval_max'] = 'Deve ser maior ou igual ao mínimo';
     
-    if (transports.max_percent < 1 || transports.max_percent > 100) errors['transports.max_percent'] = 'Entre 1 e 100';
-    if (transports.enabled && (!transports.target_town_id || String(transports.target_town_id).trim() === '')) {
-      errors['transports.target_town_id'] = 'ID obrigatório quando ativo';
+    if (market.max_storage_percent < 1 || market.max_storage_percent > 100) errors['market.max_storage_percent'] = 'Entre 1 e 100';
+    if (market.enabled && (!market.target_town_id || String(market.target_town_id).trim() === '')) {
+      errors['market.target_town_id'] = 'ID obrigatório quando ativo';
     }
 
     setValidationErrors(errors);
   }, [config]);
 
   const hasErrors = Object.keys(validationErrors).length > 0;
+
+  // --- API Action: Save ---
+  const handleSaveToGithub = async () => {
+    if (hasErrors) {
+      showToast('error', 'Corrija os erros antes de salvar.');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/save-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config }),
+      });
+      
+      const data = await res.json();
+      
+      if (data.success) {
+        showToast('success', 'Configuração salva no GitHub com sucesso!');
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (e: any) {
+      console.error(e);
+      showToast('error', `Falha ao salvar: ${e.message || 'Erro desconhecido'}`);
+    }
+  };
 
   // --- Actions ---
   const handleDownload = () => {
@@ -97,23 +162,46 @@ const App: React.FC = () => {
     try {
       const parsed = JSON.parse(importJson);
       // Basic sanity check
-      if (typeof parsed.enabled === 'boolean' && parsed.farm && parsed.transports) {
+      if (typeof parsed.enabled === 'boolean' && parsed.farm && parsed.market) {
         setConfig(parsed);
         setImportJson('');
         setImportError('');
+        showToast('success', 'JSON importado com sucesso. Lembre-se de salvar.');
       } else {
-        throw new Error("Formato inválido");
+        throw new Error("Formato inválido: Falta 'farm' ou 'market'");
       }
     } catch (e) {
-      setImportError('JSON inválido. Verifique a formatação.');
+      setImportError('JSON inválido ou incompatível.');
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0b0b0f] flex items-center justify-center text-gray-400 gap-3">
+        <Loader2 className="w-6 h-6 animate-spin text-[#00ffae]" />
+        <span>Carregando configuração...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0b0b0f] text-gray-200 font-sans selection:bg-[#00ffae] selection:text-black pb-20">
       <div className="fixed inset-0 pointer-events-none opacity-20" 
            style={{ background: 'radial-gradient(circle at 50% 0%, #1f2937 0%, transparent 50%)' }} 
       />
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-lg shadow-lg border flex items-center gap-2 animate-fade-in-down
+          ${toastMessage.type === 'success' 
+            ? 'bg-[#00ffae]/10 border-[#00ffae] text-[#00ffae]' 
+            : 'bg-red-500/10 border-red-500 text-red-400'
+          }
+        `}>
+          {toastMessage.type === 'success' ? <Save className="w-4 h-4"/> : <AlertCircle className="w-4 h-4"/>}
+          <span className="text-sm font-semibold">{toastMessage.text}</span>
+        </div>
+      )}
 
       <div className="relative max-w-5xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
         
@@ -186,11 +274,13 @@ const App: React.FC = () => {
               config={config} 
               updateNestedConfig={updateNestedConfig} 
               onManualEdit={handleManualFarmEdit}
+              onSave={handleSaveToGithub}
               errors={validationErrors}
             />
-            <TransportSection 
+            <MarketSection 
               config={config} 
               updateNestedConfig={updateNestedConfig} 
+              onSave={handleSaveToGithub}
               errors={validationErrors}
             />
             <FutureSection />

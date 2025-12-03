@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Bot, 
   Leaf, 
@@ -10,10 +10,35 @@ import {
   Sword, 
   School,
   Target,
-  Sliders
+  Sliders,
+  Save,
+  Loader2
 } from 'lucide-react';
 import { Card, Toggle, Input, Checkbox, StatusBadge, SegmentedControl } from './UI';
 import { BotConfig } from '../types';
+
+// --- Helper for Save Button ---
+interface SaveActionProps {
+  onSave: () => void;
+  isSaving: boolean;
+}
+
+const SaveAction: React.FC<SaveActionProps> = ({ onSave, isSaving }) => (
+  <button
+    onClick={onSave}
+    disabled={isSaving}
+    className={`
+      ml-3 p-1.5 rounded-lg border transition-all duration-200
+      ${isSaving 
+        ? 'bg-yellow-500/10 border-yellow-500/50 text-yellow-500 cursor-wait' 
+        : 'bg-[#1f2937] border-[#374151] text-gray-400 hover:text-white hover:border-gray-400 hover:bg-[#374151]/80'
+      }
+    `}
+    title="Salvar configuração no GitHub"
+  >
+    {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+  </button>
+);
 
 // --- General Section ---
 interface GeneralProps {
@@ -70,7 +95,7 @@ export const ProfileSection: React.FC<ProfileProps> = ({ config, onLevelChange }
     <Card icon={Sliders} title="Perfil da Conta">
        <p className="text-sm text-gray-400 mb-4">Ajusta automaticamente o intervalo de coleta de acordo com a força da conta.</p>
        <SegmentedControl 
-          value={config.farm_level}
+          value={config.farm_level || 'custom'}
           onChange={onLevelChange}
           options={[
             { value: 'nivel1', label: 'Nível 1', description: 'Contas novas (5 min)' },
@@ -85,26 +110,34 @@ export const ProfileSection: React.FC<ProfileProps> = ({ config, onLevelChange }
 // --- Farm Section ---
 interface FarmProps {
   config: BotConfig;
-  updateNestedConfig: (section: 'farm' | 'transports', key: string, value: any) => void;
-  // We need to set level to custom if manually edited
+  updateNestedConfig: (section: 'farm' | 'market', key: string, value: any) => void;
   onManualEdit: () => void;
+  onSave: () => Promise<void>;
   errors?: Record<string, string>;
 }
 
-export const FarmSection: React.FC<FarmProps> = ({ config, updateNestedConfig, onManualEdit, errors }) => {
+export const FarmSection: React.FC<FarmProps> = ({ config, updateNestedConfig, onManualEdit, onSave, errors }) => {
   const { farm } = config;
+  const [isSaving, setIsSaving] = useState(false);
   
   const handleInputChange = (key: string, rawValue: string) => {
-    // If empty string, default to 0 to prevent NaN, but usually we want to allow typing.
-    // However, types enforce number. We use 0 as fallback or parse.
     const value = rawValue === '' ? 0 : parseInt(rawValue);
     updateNestedConfig('farm', key, value);
     onManualEdit();
   };
 
+  const handleSaveClick = async () => {
+    setIsSaving(true);
+    await onSave();
+    setIsSaving(false);
+  };
+
   return (
     <Card icon={Leaf} title="Coleta com Capitão" headerAction={
+      <div className="flex items-center">
         <Toggle checked={farm.enabled} onChange={(v) => updateNestedConfig('farm', 'enabled', v)} size="sm" />
+        <SaveAction onSave={handleSaveClick} isSaving={isSaving} />
+      </div>
     }>
       <div className="space-y-6">
         <div className={`transition-opacity duration-300 ${!farm.enabled ? 'opacity-50 pointer-events-none' : ''}`}>
@@ -155,34 +188,45 @@ export const FarmSection: React.FC<FarmProps> = ({ config, updateNestedConfig, o
   );
 };
 
-// --- Transport Section ---
-interface TransportProps {
+// --- Market Section (formerly Transport) ---
+interface MarketProps {
   config: BotConfig;
-  updateNestedConfig: (section: 'farm' | 'transports', key: string, value: any) => void;
+  updateNestedConfig: (section: 'farm' | 'market', key: string, value: any) => void;
+  onSave: () => Promise<void>;
   errors?: Record<string, string>;
 }
 
-export const TransportSection: React.FC<TransportProps> = ({ config, updateNestedConfig, errors }) => {
-  const { transports } = config;
+export const MarketSection: React.FC<MarketProps> = ({ config, updateNestedConfig, onSave, errors }) => {
+  const { market } = config;
+  const [isSaving, setIsSaving] = useState(false);
   
   const handleIntChange = (key: string, rawValue: string) => {
     const value = rawValue === '' ? 0 : parseInt(rawValue);
-    updateNestedConfig('transports', key, value);
+    updateNestedConfig('market', key, value);
+  };
+
+  const handleSaveClick = async () => {
+    setIsSaving(true);
+    await onSave();
+    setIsSaving(false);
   };
 
   return (
     <Card icon={Truck} title="Envio de Recursos (Mercado)" headerAction={
-       <Toggle checked={transports.enabled} onChange={(v) => updateNestedConfig('transports', 'enabled', v)} size="sm" />
+       <div className="flex items-center">
+          <Toggle checked={market.enabled} onChange={(v) => updateNestedConfig('market', 'enabled', v)} size="sm" />
+          <SaveAction onSave={handleSaveClick} isSaving={isSaving} />
+       </div>
     }>
-       <div className={`space-y-6 transition-opacity duration-300 ${!transports.enabled ? 'opacity-50 pointer-events-none' : ''}`}>
+       <div className={`space-y-6 transition-opacity duration-300 ${!market.enabled ? 'opacity-50 pointer-events-none' : ''}`}>
           
           <Input 
             label="ID Cidade Destino" 
             placeholder="Ex: 12345"
             type="text"
-            value={transports.target_town_id}
-            onChange={(e) => updateNestedConfig('transports', 'target_town_id', e.target.value)}
-            error={errors?.['transports.target_town_id']}
+            value={market.target_town_id}
+            onChange={(e) => updateNestedConfig('market', 'target_town_id', e.target.value)}
+            error={errors?.['market.target_town_id']}
           />
 
           <div className="bg-[#1f2937] p-4 rounded-xl border border-[#374151]/50">
@@ -190,18 +234,18 @@ export const TransportSection: React.FC<TransportProps> = ({ config, updateNeste
             <div className="flex flex-wrap gap-6">
               <Checkbox 
                 label="Madeira" 
-                checked={transports.send_wood}
-                onChange={(v) => updateNestedConfig('transports', 'send_wood', v)}
+                checked={market.send_wood}
+                onChange={(v) => updateNestedConfig('market', 'send_wood', v)}
               />
               <Checkbox 
                 label="Pedra" 
-                checked={transports.send_stone}
-                onChange={(v) => updateNestedConfig('transports', 'send_stone', v)}
+                checked={market.send_stone}
+                onChange={(v) => updateNestedConfig('market', 'send_stone', v)}
               />
               <Checkbox 
                 label="Prata" 
-                checked={transports.send_silver}
-                onChange={(v) => updateNestedConfig('transports', 'send_silver', v)}
+                checked={market.send_silver}
+                onChange={(v) => updateNestedConfig('market', 'send_silver', v)}
               />
             </div>
           </div>
@@ -211,29 +255,29 @@ export const TransportSection: React.FC<TransportProps> = ({ config, updateNeste
               label="Percentual Max. Armazém" 
               type="number" 
               min="1" max="100"
-              value={transports.max_percent.toString()}
-              onChange={(e) => handleIntChange('max_percent', e.target.value)}
+              value={market.max_storage_percent.toString()}
+              onChange={(e) => handleIntChange('max_storage_percent', e.target.value)}
               suffix="%"
-              error={errors?.['transports.max_percent']}
+              error={errors?.['market.max_storage_percent']}
             />
              <Input 
               label="Limite por envio" 
               type="number" 
-              value={transports.per_send_limit.toString()}
-              onChange={(e) => handleIntChange('per_send_limit', e.target.value)}
+              value={market.max_send_per_trip.toString()}
+              onChange={(e) => handleIntChange('max_send_per_trip', e.target.value)}
             />
             <Input 
               label="Intervalo Verificação" 
               type="number" 
-              value={transports.interval_seconds.toString()}
-              onChange={(e) => handleIntChange('interval_seconds', e.target.value)}
+              value={market.check_interval.toString()}
+              onChange={(e) => handleIntChange('check_interval', e.target.value)}
               suffix="seg"
             />
              <Input 
               label="Delay entre envios" 
               type="number" 
-              value={transports.delay_seconds.toString()}
-              onChange={(e) => handleIntChange('delay_seconds', e.target.value)}
+              value={market.delay_between_trips.toString()}
+              onChange={(e) => handleIntChange('delay_between_trips', e.target.value)}
               suffix="seg"
             />
           </div>
@@ -241,8 +285,8 @@ export const TransportSection: React.FC<TransportProps> = ({ config, updateNeste
            <Checkbox 
               label="Dividir igualmente" 
               subLabel="Tenta balancear a quantidade enviada de cada recurso selecionado"
-              checked={transports.divide_equally}
-              onChange={(v) => updateNestedConfig('transports', 'divide_equally', v)}
+              checked={market.split_equally}
+              onChange={(v) => updateNestedConfig('market', 'split_equally', v)}
             />
        </div>
     </Card>
