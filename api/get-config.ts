@@ -1,97 +1,56 @@
 export const config = {
-  runtime: "edge",
+  runtime: 'edge',
 };
 
-type GitHubFileResponse = {
-  content?: string;
-  encoding?: string;
-  sha?: string;
-};
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "access-control-allow-origin": "*",
-      "access-control-allow-methods": "GET, OPTIONS",
-      "access-control-allow-headers": "*",
-    },
-  });
-}
-
-export default async function handler(req: Request): Promise<Response> {
-  if (req.method === "OPTIONS") {
-    return jsonResponse({}, 204);
-  }
-
-  if (req.method !== "GET") {
-    return jsonResponse(
-      { success: false, error: "Method not allowed" },
-      405
-    );
+export default async function handler(request: Request) {
+  if (request.method !== 'GET') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
   }
 
   const token = process.env.GITHUB_TOKEN;
-  const owner = process.env.GITHUB_OWNER;
-  const repo = process.env.GITHUB_REPO;
-  const path = process.env.GITHUB_PATH;
-  const branch = process.env.GITHUB_BRANCH || "main";
+  const owner = process.env.GITHUB_OWNER || 'pesquisacemporcento-droid';
+  const repo = process.env.GITHUB_REPO || 'config-grepolis-bot';
+  const path = process.env.GITHUB_PATH || 'config-grepolis-bot/config.json';
+  const branch = process.env.GITHUB_BRANCH || 'main';
 
-  if (!token || !owner || !repo || !path) {
-    return jsonResponse(
-      { success: false, error: "Missing GitHub environment variables" },
-      500
-    );
+  if (!token) {
+    return new Response(JSON.stringify({ error: 'Server misconfiguration: Missing GITHUB_TOKEN' }), { status: 500 });
   }
 
-  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(
-    path
-  )}?ref=${branch}`;
-
   try {
-    const res = await fetch(url, {
+    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
+    
+    const response = await fetch(url, {
       headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
       },
-      cache: "no-store",
     });
 
-    if (!res.ok) {
-      const text = await res.text();
-      return jsonResponse(
-        {
-          success: false,
-          error: `GitHub GET error: ${res.status}`,
-          details: text,
-        },
-        res.status
-      );
+    if (!response.ok) {
+      if (response.status === 404) {
+        return new Response(JSON.stringify({ success: false, error: 'File not found' }), { status: 404 });
+      }
+      throw new Error(`GitHub API responded with ${response.status}`);
     }
 
-    const data = (await res.json()) as GitHubFileResponse;
+    const data = await response.json();
+    
+    // GitHub returns content in base64
+    // We use standard Web APIs (TextDecoder + Uint8Array) to correctly handle UTF-8 characters
+    // This avoids the 'deprecated' and sometimes flaky unescape/escape hack.
+    const rawContent = atob(data.content.replace(/\n/g, ''));
+    const bytes = Uint8Array.from(rawContent, c => c.charCodeAt(0));
+    const decodedContent = new TextDecoder().decode(bytes);
+    
+    const jsonConfig = JSON.parse(decodedContent);
 
-    if (!data.content) {
-      return jsonResponse(
-        { success: false, error: "No content in GitHub response" },
-        500
-      );
-    }
+    return new Response(JSON.stringify({ success: true, config: jsonConfig }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
 
-    const base64 = data.content.replace(/\n/g, "");
-    const jsonString = atob(base64);
-    const configObj = JSON.parse(jsonString);
-
-    return jsonResponse({ success: true, config: configObj }, 200);
-  } catch (e: any) {
-    return jsonResponse(
-      {
-        success: false,
-        error: "Unexpected error while reading config from GitHub",
-        details: String(e),
-      },
-      500
-    );
+  } catch (error: any) {
+    return new Response(JSON.stringify({ success: false, error: error.message }), { status: 500 });
   }
 }
