@@ -94,7 +94,10 @@ interface FarmProps {
 export const FarmSection: React.FC<FarmProps> = ({ config, updateNestedConfig, onManualEdit, errors }) => {
   const { farm } = config;
   
-  const handleInputChange = (key: string, value: number) => {
+  const handleInputChange = (key: string, rawValue: string) => {
+    // If empty string, default to 0 to prevent NaN, but usually we want to allow typing.
+    // However, types enforce number. We use 0 as fallback or parse.
+    const value = rawValue === '' ? 0 : parseInt(rawValue);
     updateNestedConfig('farm', key, value);
     onManualEdit();
   };
@@ -109,16 +112,16 @@ export const FarmSection: React.FC<FarmProps> = ({ config, updateNestedConfig, o
             <Input 
               label="Intervalo Mínimo" 
               type="number" 
-              value={farm.interval_min}
-              onChange={(e) => handleInputChange('interval_min', parseInt(e.target.value))}
+              value={farm.interval_min.toString()}
+              onChange={(e) => handleInputChange('interval_min', e.target.value)}
               suffix="seg"
               error={errors?.['farm.interval_min']}
             />
             <Input 
               label="Intervalo Máximo" 
               type="number" 
-              value={farm.interval_max}
-              onChange={(e) => handleInputChange('interval_max', parseInt(e.target.value))}
+              value={farm.interval_max.toString()}
+              onChange={(e) => handleInputChange('interval_max', e.target.value)}
               suffix="seg"
               error={errors?.['farm.interval_max']}
             />
@@ -161,6 +164,11 @@ interface TransportProps {
 
 export const TransportSection: React.FC<TransportProps> = ({ config, updateNestedConfig, errors }) => {
   const { transports } = config;
+  
+  const handleIntChange = (key: string, rawValue: string) => {
+    const value = rawValue === '' ? 0 : parseInt(rawValue);
+    updateNestedConfig('transports', key, value);
+  };
 
   return (
     <Card icon={Truck} title="Envio de Recursos (Mercado)" headerAction={
@@ -203,29 +211,29 @@ export const TransportSection: React.FC<TransportProps> = ({ config, updateNeste
               label="Percentual Max. Armazém" 
               type="number" 
               min="1" max="100"
-              value={transports.max_percent}
-              onChange={(e) => updateNestedConfig('transports', 'max_percent', parseInt(e.target.value))}
+              value={transports.max_percent.toString()}
+              onChange={(e) => handleIntChange('max_percent', e.target.value)}
               suffix="%"
               error={errors?.['transports.max_percent']}
             />
              <Input 
               label="Limite por envio" 
               type="number" 
-              value={transports.per_send_limit}
-              onChange={(e) => updateNestedConfig('transports', 'per_send_limit', parseInt(e.target.value))}
+              value={transports.per_send_limit.toString()}
+              onChange={(e) => handleIntChange('per_send_limit', e.target.value)}
             />
             <Input 
               label="Intervalo Verificação" 
               type="number" 
-              value={transports.interval_seconds}
-              onChange={(e) => updateNestedConfig('transports', 'interval_seconds', parseInt(e.target.value))}
+              value={transports.interval_seconds.toString()}
+              onChange={(e) => handleIntChange('interval_seconds', e.target.value)}
               suffix="seg"
             />
              <Input 
               label="Delay entre envios" 
               type="number" 
-              value={transports.delay_seconds}
-              onChange={(e) => updateNestedConfig('transports', 'delay_seconds', parseInt(e.target.value))}
+              value={transports.delay_seconds.toString()}
+              onChange={(e) => handleIntChange('delay_seconds', e.target.value)}
               suffix="seg"
             />
           </div>
