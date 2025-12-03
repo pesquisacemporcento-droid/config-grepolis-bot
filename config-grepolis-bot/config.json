@@ -3,7 +3,7 @@
   "farm_level": "custom",
   "farm": {
     "enabled": true,
-    "interval_min": 200,
+    "interval_min": 203,
     "interval_max": 250,
     "shuffle_cities": true
   },
