@@ -41,9 +41,11 @@ export default async function handler(request: Request) {
     }
 
     // 2. Encode content to Base64 with UTF-8 support
+    // Standard Web API way to encode UTF-8 string to Base64
     const contentString = JSON.stringify(config, null, 2);
-    // Standard JS way to encode UTF-8 string to Base64
-    const contentBase64 = btoa(unescape(encodeURIComponent(contentString)));
+    const bytes = new TextEncoder().encode(contentString);
+    const binString = Array.from(bytes, byte => String.fromCharCode(byte)).join("");
+    const contentBase64 = btoa(binString);
 
     // 3. PUT update
     const putBody = {

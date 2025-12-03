@@ -17,6 +17,10 @@ import {
 import { Card, Toggle, Input, Checkbox, StatusBadge, SegmentedControl } from './UI';
 import { BotConfig } from '../types';
 
+// Constants for styling
+const INNER_CARD_BG = 'bg-[#09090b]'; // Zinc 950
+const INNER_BORDER = 'border-[#27272a]'; // Zinc 800
+
 // --- Helper for Save Button ---
 interface SaveActionProps {
   onSave: () => void;
@@ -28,15 +32,15 @@ const SaveAction: React.FC<SaveActionProps> = ({ onSave, isSaving }) => (
     onClick={onSave}
     disabled={isSaving}
     className={`
-      ml-3 p-1.5 rounded-lg border transition-all duration-200
+      ml-3 p-2 rounded-lg border transition-all duration-200
       ${isSaving 
         ? 'bg-yellow-500/10 border-yellow-500/50 text-yellow-500 cursor-wait' 
-        : 'bg-[#1f2937] border-[#374151] text-gray-400 hover:text-white hover:border-gray-400 hover:bg-[#374151]/80'
+        : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500 hover:bg-zinc-800'
       }
     `}
     title="Salvar configuração no GitHub"
   >
-    {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
   </button>
 );
 
@@ -51,11 +55,11 @@ export const GeneralSection: React.FC<GeneralProps> = ({ config, updateConfig })
     <Card icon={Bot} title="Status Geral" headerAction={
       <StatusBadge active={config.enabled} />
     }>
-      <div className="flex flex-col gap-6">
-        <div className="flex items-center justify-between p-4 bg-[#1f2937] rounded-xl border border-[#374151]/50">
+      <div className="flex flex-col gap-5">
+        <div className={`flex items-center justify-between p-5 ${INNER_CARD_BG} rounded-xl border ${INNER_BORDER}`}>
           <div>
-            <p className="text-white font-medium mb-1">Status do Bot</p>
-            <p className="text-xs text-gray-500">Controle mestre para todas as automações</p>
+            <p className="text-zinc-100 font-medium mb-1">Status do Bot</p>
+            <p className="text-xs text-zinc-500">Controle mestre para todas as automações</p>
           </div>
           <Toggle 
             checked={config.enabled} 
@@ -64,19 +68,19 @@ export const GeneralSection: React.FC<GeneralProps> = ({ config, updateConfig })
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          <div className="p-4 bg-[#1f2937] rounded-xl border border-[#374151]/50">
-            <div className="flex items-center gap-2 text-gray-400 mb-2">
-              <Clock className="w-4 h-4" />
-              <span className="text-xs uppercase font-bold tracking-wider">Última Execução</span>
+          <div className={`p-4 ${INNER_CARD_BG} rounded-xl border ${INNER_BORDER}`}>
+            <div className="flex items-center gap-2 text-zinc-500 mb-2">
+              <Clock className="w-3.5 h-3.5" />
+              <span className="text-[10px] uppercase font-bold tracking-wider">Última Execução</span>
             </div>
-            <p className="text-white font-mono">há 5 minutos</p>
+            <p className="text-zinc-200 font-mono text-sm">há 5 minutos</p>
           </div>
-          <div className="p-4 bg-[#1f2937] rounded-xl border border-[#374151]/50">
-            <div className="flex items-center gap-2 text-gray-400 mb-2">
-              <Activity className="w-4 h-4" />
-              <span className="text-xs uppercase font-bold tracking-wider">Próxima Ação</span>
+          <div className={`p-4 ${INNER_CARD_BG} rounded-xl border ${INNER_BORDER}`}>
+            <div className="flex items-center gap-2 text-zinc-500 mb-2">
+              <Activity className="w-3.5 h-3.5" />
+              <span className="text-[10px] uppercase font-bold tracking-wider">Próxima Ação</span>
             </div>
-            <p className="text-[#00ffae] font-mono">~120s</p>
+            <p className="text-[#00ffae] font-mono text-sm">~120s</p>
           </div>
         </div>
       </div>
@@ -93,14 +97,16 @@ interface ProfileProps {
 export const ProfileSection: React.FC<ProfileProps> = ({ config, onLevelChange }) => {
   return (
     <Card icon={Sliders} title="Perfil da Conta">
-       <p className="text-sm text-gray-400 mb-4">Ajusta automaticamente o intervalo de coleta de acordo com a força da conta.</p>
+       <p className="text-sm text-zinc-400 mb-6 leading-relaxed">
+         Selecione o perfil que melhor se adapta ao nível da sua conta para ajustar automaticamente os intervalos de coleta.
+       </p>
        <SegmentedControl 
           value={config.farm_level || 'custom'}
           onChange={onLevelChange}
           options={[
-            { value: 'nivel1', label: 'Nível 1', description: 'Contas novas (5 min)' },
+            { value: 'nivel1', label: 'Nível 1', description: 'Novas (5 min)' },
             { value: 'nivel2', label: 'Nível 2', description: 'Avançadas (10 min)' },
-            { value: 'custom', label: 'Personalizado', description: 'Configuração manual' },
+            { value: 'custom', label: 'Personalizado', description: 'Manual' },
           ]}
        />
     </Card>
@@ -140,8 +146,8 @@ export const FarmSection: React.FC<FarmProps> = ({ config, updateNestedConfig, o
       </div>
     }>
       <div className="space-y-6">
-        <div className={`transition-opacity duration-300 ${!farm.enabled ? 'opacity-50 pointer-events-none' : ''}`}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div className={`transition-opacity duration-300 ${!farm.enabled ? 'opacity-40 pointer-events-none grayscale' : ''}`}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
             <Input 
               label="Intervalo Mínimo" 
               type="number" 
@@ -160,25 +166,28 @@ export const FarmSection: React.FC<FarmProps> = ({ config, updateNestedConfig, o
             />
           </div>
           
-          <div className="mb-6">
+          <div className="mb-6 p-1">
             <Checkbox 
-              label="Embaralhar ordem das cidades (Shuffle)" 
+              label="Embaralhar ordem das cidades" 
               subLabel="Simula comportamento humano variando aleatoriamente a ordem de coleta"
               checked={farm.shuffle_cities}
               onChange={(v) => updateNestedConfig('farm', 'shuffle_cities', v)}
             />
           </div>
 
-          <div className="bg-[#0b0b0f] rounded-lg p-4 border border-[#374151]">
-            <h4 className="text-xs uppercase text-gray-500 font-bold mb-3 tracking-wider">Log de Atividade (Simulado)</h4>
-            <div className="space-y-2 text-sm font-mono">
-              <div className="flex justify-between items-center text-[#00ffae]">
-                <span>[10:42] Coleta realizada: Cidade Alpha</span>
-                <span className="text-xs bg-[#00ffae]/10 px-2 py-0.5 rounded">OK</span>
+          <div className={`${INNER_CARD_BG} rounded-xl p-5 border ${INNER_BORDER}`}>
+            <h4 className="text-[10px] uppercase text-zinc-500 font-bold mb-3 tracking-widest flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-zinc-600"></span>
+              Log de Atividade (Simulado)
+            </h4>
+            <div className="space-y-3 text-xs font-mono leading-relaxed">
+              <div className="flex justify-between items-start text-[#00ffae]">
+                <span className="flex-1">[10:42] Coleta realizada: Cidade Alpha</span>
+                <span className="text-[10px] bg-[#00ffae]/10 px-2 py-0.5 rounded ml-2 whitespace-nowrap">SUCESSO</span>
               </div>
-              <div className="flex justify-between items-center text-gray-400">
-                <span>[10:30] Coleta realizada: Cidade Beta</span>
-                <span className="text-xs bg-gray-800 px-2 py-0.5 rounded">OK</span>
+              <div className="flex justify-between items-start text-zinc-500">
+                <span className="flex-1">[10:30] Coleta realizada: Cidade Beta</span>
+                <span className="text-[10px] bg-zinc-800 px-2 py-0.5 rounded ml-2 whitespace-nowrap">OK</span>
               </div>
             </div>
           </div>
@@ -218,7 +227,7 @@ export const MarketSection: React.FC<MarketProps> = ({ config, updateNestedConfi
           <SaveAction onSave={handleSaveClick} isSaving={isSaving} />
        </div>
     }>
-       <div className={`space-y-6 transition-opacity duration-300 ${!market.enabled ? 'opacity-50 pointer-events-none' : ''}`}>
+       <div className={`space-y-6 transition-opacity duration-300 ${!market.enabled ? 'opacity-40 pointer-events-none grayscale' : ''}`}>
           
           <Input 
             label="ID Cidade Destino" 
@@ -227,11 +236,12 @@ export const MarketSection: React.FC<MarketProps> = ({ config, updateNestedConfi
             value={market.target_town_id}
             onChange={(e) => updateNestedConfig('market', 'target_town_id', e.target.value)}
             error={errors?.['market.target_town_id']}
+            className="font-mono"
           />
 
-          <div className="bg-[#1f2937] p-4 rounded-xl border border-[#374151]/50">
-            <span className="text-xs uppercase tracking-wider text-gray-500 font-semibold block mb-3">Recursos a Enviar</span>
-            <div className="flex flex-wrap gap-6">
+          <div className={`${INNER_CARD_BG} p-5 rounded-xl border ${INNER_BORDER}`}>
+            <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold block mb-4">Recursos a Enviar</span>
+            <div className="flex flex-col sm:flex-row gap-4 sm:gap-8">
               <Checkbox 
                 label="Madeira" 
                 checked={market.send_wood}
@@ -250,7 +260,7 @@ export const MarketSection: React.FC<MarketProps> = ({ config, updateNestedConfi
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
              <Input 
               label="Percentual Max. Armazém" 
               type="number" 
@@ -282,12 +292,14 @@ export const MarketSection: React.FC<MarketProps> = ({ config, updateNestedConfi
             />
           </div>
 
-           <Checkbox 
-              label="Dividir igualmente" 
-              subLabel="Tenta balancear a quantidade enviada de cada recurso selecionado"
-              checked={market.split_equally}
-              onChange={(v) => updateNestedConfig('market', 'split_equally', v)}
-            />
+           <div className="pt-2">
+            <Checkbox 
+                label="Dividir igualmente" 
+                subLabel="Tenta balancear a quantidade enviada de cada recurso selecionado"
+                checked={market.split_equally}
+                onChange={(v) => updateNestedConfig('market', 'split_equally', v)}
+              />
+           </div>
        </div>
     </Card>
   );
@@ -304,12 +316,12 @@ export const FutureSection: React.FC = () => {
   ];
 
   return (
-    <Card title="Em Breve" className="opacity-80">
+    <Card title="Em Breve" className="opacity-60 border-dashed">
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
         {futures.map((F, i) => (
-          <div key={i} className="flex flex-col items-center justify-center p-4 bg-[#0b0b0f]/50 border border-[#374151] rounded-xl text-gray-600 grayscale opacity-60 cursor-not-allowed hover:opacity-70 transition-opacity">
-            <F.icon className="w-6 h-6 mb-2" />
-            <span className="text-xs font-bold uppercase">{F.name}</span>
+          <div key={i} className={`flex flex-col items-center justify-center p-5 ${INNER_CARD_BG} border ${INNER_BORDER} rounded-xl text-zinc-600 grayscale cursor-not-allowed hover:bg-zinc-900 transition-colors`}>
+            <F.icon className="w-6 h-6 mb-3 opacity-50" />
+            <span className="text-[10px] font-bold uppercase tracking-widest">{F.name}</span>
           </div>
         ))}
       </div>

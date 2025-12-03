@@ -37,9 +37,11 @@ export default async function handler(request: Request) {
     const data = await response.json();
     
     // GitHub returns content in base64
-    // We use decodeURIComponent(escape(atob(...))) to correctly handle UTF-8 characters (accents, emojis)
+    // We use standard Web APIs (TextDecoder + Uint8Array) to correctly handle UTF-8 characters
+    // This avoids the 'deprecated' and sometimes flaky unescape/escape hack.
     const rawContent = atob(data.content.replace(/\n/g, ''));
-    const decodedContent = decodeURIComponent(escape(rawContent));
+    const bytes = Uint8Array.from(rawContent, c => c.charCodeAt(0));
+    const decodedContent = new TextDecoder().decode(bytes);
     
     const jsonConfig = JSON.parse(decodedContent);
 

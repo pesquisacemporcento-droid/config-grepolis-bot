@@ -19,24 +19,31 @@ const App: React.FC = () => {
     const fetchConfig = async () => {
       try {
         const res = await fetch('/api/get-config');
-        const data = await res.json();
+        // Using text() + JSON.parse() is more robust against stream errors than res.json()
+        const text = await res.text();
         
-        if (data.success && data.config) {
-          // Merge with default to ensure all fields exist if JSON is partial
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          console.error("Invalid JSON response:", text);
+          throw new Error("Resposta inválida do servidor");
+        }
+        
+        if (data && data.success && data.config) {
           setConfig({
             ...DEFAULT_CONFIG,
             ...data.config,
-            // Ensure nested objects merge correctly
             farm: { ...DEFAULT_CONFIG.farm, ...(data.config.farm || {}) },
             market: { ...DEFAULT_CONFIG.market, ...(data.config.market || {}) },
           });
         } else {
-          console.error("Failed to load config:", data.error);
-          showToast('error', 'Falha ao carregar configuração do GitHub');
+          console.error("Failed to load config:", data?.error || "Unknown error");
+          showToast('error', data?.error || 'Falha ao carregar configuração');
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error("Network error:", error);
-        showToast('error', 'Erro de conexão ao buscar configuração');
+        showToast('error', `Erro de conexão: ${error.message || 'Desconhecido'}`);
       } finally {
         setLoading(false);
       }
@@ -50,10 +57,8 @@ const App: React.FC = () => {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  // --- Logic for Presets ---
   const handleLevelChange = (level: FarmLevel) => {
     let updates: Partial<BotConfig['farm']> = {};
-    
     if (level === 'nivel1') {
       updates = { interval_min: 300, interval_max: 343 };
     } else if (level === 'nivel2') {
@@ -73,7 +78,6 @@ const App: React.FC = () => {
     }
   };
 
-  // --- Generic Updaters ---
   const updateConfig = (key: keyof BotConfig, value: any) => {
     setConfig(prev => ({ ...prev, [key]: value }));
     setIsSaved(false);
@@ -90,7 +94,6 @@ const App: React.FC = () => {
     setIsSaved(false);
   };
 
-  // --- Validation ---
   useEffect(() => {
     const errors: Record<string, string> = {};
     const { farm, market } = config;
@@ -108,7 +111,6 @@ const App: React.FC = () => {
 
   const hasErrors = Object.keys(validationErrors).length > 0;
 
-  // --- API Action: Save ---
   const handleSaveToGithub = async () => {
     if (hasErrors) {
       showToast('error', 'Corrija os erros antes de salvar.');
@@ -122,7 +124,13 @@ const App: React.FC = () => {
         body: JSON.stringify({ config }),
       });
       
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        throw new Error("Resposta inválida do servidor ao salvar");
+      }
       
       if (data.success) {
         showToast('success', 'Configuração salva no GitHub com sucesso!');
@@ -135,7 +143,6 @@ const App: React.FC = () => {
     }
   };
 
-  // --- Actions ---
   const handleDownload = () => {
     if (hasErrors) return;
     const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
@@ -161,7 +168,6 @@ const App: React.FC = () => {
   const handleImport = () => {
     try {
       const parsed = JSON.parse(importJson);
-      // Basic sanity check
       if (typeof parsed.enabled === 'boolean' && parsed.farm && parsed.market) {
         setConfig(parsed);
         setImportJson('');
@@ -177,25 +183,26 @@ const App: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0b0b0f] flex items-center justify-center text-gray-400 gap-3">
-        <Loader2 className="w-6 h-6 animate-spin text-[#00ffae]" />
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-zinc-400 gap-3 font-medium">
+        <Loader2 className="w-5 h-5 animate-spin text-[#00ffae]" />
         <span>Carregando configuração...</span>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#0b0b0f] text-gray-200 font-sans selection:bg-[#00ffae] selection:text-black pb-20">
-      <div className="fixed inset-0 pointer-events-none opacity-20" 
-           style={{ background: 'radial-gradient(circle at 50% 0%, #1f2937 0%, transparent 50%)' }} 
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans pb-24">
+      {/* Background decoration */}
+      <div className="fixed inset-0 pointer-events-none opacity-[0.03]" 
+           style={{ backgroundImage: 'radial-gradient(#ffffff 1px, transparent 1px)', backgroundSize: '24px 24px' }} 
       />
 
       {/* Toast Notification */}
       {toastMessage && (
-        <div className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-lg shadow-lg border flex items-center gap-2 animate-fade-in-down
+        <div className={`fixed top-6 right-6 z-50 px-5 py-3 rounded-xl shadow-2xl border flex items-center gap-3 animate-fade-in-down backdrop-blur-md
           ${toastMessage.type === 'success' 
-            ? 'bg-[#00ffae]/10 border-[#00ffae] text-[#00ffae]' 
-            : 'bg-red-500/10 border-red-500 text-red-400'
+            ? 'bg-[#00ffae]/5 border-[#00ffae]/20 text-[#00ffae]' 
+            : 'bg-red-500/5 border-red-500/20 text-red-400'
           }
         `}>
           {toastMessage.type === 'success' ? <Save className="w-4 h-4"/> : <AlertCircle className="w-4 h-4"/>}
@@ -203,73 +210,73 @@ const App: React.FC = () => {
         </div>
       )}
 
-      <div className="relative max-w-5xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+      <div className="relative max-w-[1100px] mx-auto px-6 py-10 sm:px-8">
         
         {/* Header */}
-        <header className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-6">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-[#111827] border border-[#374151] rounded-xl shadow-[0_0_15px_-5px_#00ffae]">
-              <Settings className="w-8 h-8 text-[#00ffae]" />
+        <header className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6">
+          <div className="flex items-center gap-5">
+            <div className="p-3.5 bg-zinc-900 border border-zinc-800 rounded-2xl shadow-lg">
+              <Settings className="w-7 h-7 text-[#00ffae]" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-white tracking-tight">Painel de Controle</h1>
-              <p className="text-gray-400 mt-1 flex items-center gap-2">
-                <Terminal className="w-4 h-4" />
+              <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">Painel de Controle</h1>
+              <p className="text-zinc-500 mt-1 flex items-center gap-2 text-sm font-medium">
+                <Terminal className="w-3.5 h-3.5" />
                 Bot Grepolis Automation
               </p>
             </div>
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex items-center gap-3">
              <button 
               onClick={handleCopy}
               disabled={hasErrors}
               className={`
-                flex items-center gap-2 px-4 py-3 rounded-lg font-semibold transition-all duration-300 border
+                flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 border
                 ${isCopied 
-                  ? 'bg-[#1f2937] text-[#00ffae] border-[#00ffae]' 
-                  : 'bg-[#1f2937] text-white border-[#374151] hover:bg-[#374151]'}
+                  ? 'bg-zinc-900 text-[#00ffae] border-[#00ffae]' 
+                  : 'bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-zinc-600 hover:text-white'}
                  ${hasErrors ? 'opacity-50 cursor-not-allowed' : ''}
               `}
             >
-              <Copy className="w-5 h-5" />
-              {isCopied ? 'Copiado!' : 'Copiar JSON'}
+              <Copy className="w-4 h-4" />
+              {isCopied ? 'Copiado' : 'Copiar'}
             </button>
             <button 
               onClick={handleDownload}
               disabled={hasErrors}
               className={`
-                flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all duration-300
+                flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 shadow-lg
                 ${isSaved 
-                  ? 'bg-[#00ffae] text-black shadow-[0_0_20px_-5px_#00ffae]' 
-                  : 'bg-[#1f2937] text-white hover:bg-[#374151] border border-[#374151]'}
+                  ? 'bg-[#00ffae] text-black shadow-[0_0_15px_-5px_#00ffae]' 
+                  : 'bg-zinc-100 text-black hover:bg-white'}
                 ${hasErrors ? 'opacity-50 cursor-not-allowed' : ''}
               `}
             >
-              {isSaved ? <Save className="w-5 h-5" /> : <Download className="w-5 h-5" />}
-              {isSaved ? 'Salvo!' : 'Baixar JSON'}
+              {isSaved ? <Save className="w-4 h-4" /> : <Download className="w-4 h-4" />}
+              {isSaved ? 'Salvo' : 'Baixar JSON'}
             </button>
           </div>
         </header>
 
         {hasErrors && (
-          <div className="mb-6 p-4 bg-red-900/20 border border-red-500/50 rounded-xl flex items-center gap-3 text-red-200">
+          <div className="mb-8 p-4 bg-red-500/5 border border-red-500/20 rounded-xl flex items-center gap-3 text-red-300 animate-pulse">
              <AlertCircle className="w-5 h-5 text-red-500" />
-             <span className="font-medium">Existem erros na configuração. Corrija os campos em vermelho para salvar.</span>
+             <span className="font-medium text-sm">Existem erros na configuração. Verifique os campos marcados em vermelho.</span>
           </div>
         )}
 
         {/* Main Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           
-          {/* Left Column */}
-          <div className="lg:col-span-1 space-y-6">
+          {/* Left Column (Sticky) */}
+          <div className="lg:col-span-4 space-y-8 h-fit lg:sticky lg:top-8">
             <GeneralSection config={config} updateConfig={updateConfig} />
             <ProfileSection config={config} onLevelChange={handleLevelChange} />
           </div>
 
           {/* Right Column */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-8 space-y-8">
             <FarmSection 
               config={config} 
               updateNestedConfig={updateNestedConfig} 
@@ -284,40 +291,43 @@ const App: React.FC = () => {
               errors={validationErrors}
             />
             <FutureSection />
+            
+            {/* Import Section */}
+            <section className="pt-8 border-t border-zinc-800">
+              <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                <Upload className="w-4 h-4" />
+                Importar Configuração
+              </h3>
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+                  <TextArea 
+                    label="Cole o JSON aqui" 
+                    placeholder='{ "enabled": true, ... }'
+                    value={importJson}
+                    onChange={(e) => {
+                      setImportJson(e.target.value);
+                      setImportError('');
+                    }}
+                    error={importError}
+                    className="bg-zinc-950 font-mono text-xs"
+                  />
+                  <div className="mt-4 flex justify-end">
+                    <button 
+                      onClick={handleImport}
+                      className="px-5 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-sm font-medium transition-colors border border-zinc-700"
+                    >
+                      Carregar Dados
+                    </button>
+                  </div>
+              </div>
+            </section>
           </div>
 
         </div>
 
-        {/* Import Section */}
-        <section className="mt-12 pt-8 border-t border-[#374151]/50">
-           <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-             <Upload className="w-5 h-5 text-gray-400" />
-             Importar Configuração
-           </h3>
-           <div className="bg-[#111827] border border-[#374151] rounded-2xl p-6">
-              <TextArea 
-                label="Cole o JSON aqui" 
-                placeholder='{ "enabled": true, ... }'
-                value={importJson}
-                onChange={(e) => {
-                  setImportJson(e.target.value);
-                  setImportError('');
-                }}
-                error={importError}
-              />
-              <button 
-                onClick={handleImport}
-                className="mt-4 px-6 py-2 bg-[#374151] hover:bg-[#4b5563] text-white rounded-lg font-medium transition-colors"
-              >
-                Carregar JSON
-              </button>
-           </div>
-        </section>
-
         {/* Footer */}
-        <footer className="mt-12 py-6 text-center border-t border-[#374151]/30">
-          <p className="text-sm text-gray-600">
-            Bot Grepolis – Painel de Controle • Desenvolvido por IA
+        <footer className="mt-20 py-8 text-center border-t border-zinc-800/50">
+          <p className="text-xs text-zinc-600 font-medium">
+            Bot Grepolis – Painel de Controle • v2.0
           </p>
         </footer>
       </div>
