@@ -1,82 +1,113 @@
 export const config = {
-  runtime: 'edge',
+  runtime: "edge",
 };
 
-export default async function handler(request: Request) {
-  if (request.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+    },
+  });
+}
+
+export default async function handler(req: Request): Promise<Response> {
+  if (req.method !== "POST") {
+    return jsonResponse(
+      { success: false, error: "Method not allowed" },
+      405
+    );
   }
 
   const token = process.env.GITHUB_TOKEN;
-  const owner = process.env.GITHUB_OWNER || 'pesquisacemporcento-droid';
-  const repo = process.env.GITHUB_REPO || 'config-grepolis-bot';
-  const path = process.env.GITHUB_PATH || 'config-grepolis-bot/config.json';
-  const branch = process.env.GITHUB_BRANCH || 'main';
+  const owner = process.env.GITHUB_OWNER;
+  const repo = process.env.GITHUB_REPO;
+  const path = process.env.GITHUB_PATH;
+  const branch = process.env.GITHUB_BRANCH || "main";
 
-  if (!token) {
-    return new Response(JSON.stringify({ error: 'Server misconfiguration: Missing GITHUB_TOKEN' }), { status: 500 });
+  if (!token || !owner || !repo || !path) {
+    return jsonResponse(
+      { success: false, error: "Missing GitHub environment variables" },
+      500
+    );
   }
 
+  let body: any;
   try {
-    const { config } = await request.json();
-
-    if (!config) {
-      return new Response(JSON.stringify({ error: 'Missing config data' }), { status: 400 });
-    }
-
-    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
-
-    // 1. Get current SHA to allow update
-    const getResponse = await fetch(`${url}?ref=${branch}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/vnd.github.v3+json',
-      },
-    });
-
-    let sha = '';
-    if (getResponse.ok) {
-      const data = await getResponse.json();
-      sha = data.sha;
-    }
-
-    // 2. Encode content to Base64 with UTF-8 support
-    // Standard Web API way to encode UTF-8 string to Base64
-    const contentString = JSON.stringify(config, null, 2);
-    const bytes = new TextEncoder().encode(contentString);
-    const binString = Array.from(bytes, byte => String.fromCharCode(byte)).join("");
-    const contentBase64 = btoa(binString);
-
-    // 3. PUT update
-    const putBody = {
-      message: 'Atualizar config.json pelo painel web',
-      content: contentBase64,
-      branch: branch,
-      ...(sha ? { sha } : {}),
-    };
-
-    const putResponse = await fetch(url, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/vnd.github.v3+json',
-      },
-      body: JSON.stringify(putBody),
-    });
-
-    if (!putResponse.ok) {
-      const errorData = await putResponse.json();
-      throw new Error(errorData.message || `GitHub API error: ${putResponse.status}`);
-    }
-
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
-
-  } catch (error: any) {
-    console.error("Save error:", error);
-    return new Response(JSON.stringify({ success: false, error: error.message }), { status: 500 });
+    body = await req.json();
+  } catch {
+    return jsonResponse(
+      { success: false, error: "Invalid JSON in request body" },
+      400
+    );
   }
+
+  const configObj = body?.config;
+  if (!configObj) {
+    return jsonResponse(
+      { success: false, error: "Missing 'config' field in body" },
+      400
+    );
+  }
+
+  const jsonString = JSON.stringify(configObj, null, 2);
+  const base64Content = btoa(jsonString);
+
+  const baseUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(
+    path
+  )}`;
+
+  // 1) Tentar pegar o SHA atual (se o arquivo já existir)
+  let existingSha: string | undefined;
+  try {
+    const getRes = await fetch(`${baseUrl}?ref=${branch}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+      },
+    });
+
+    if (getRes.ok) {
+      const data = (await getRes.json()) as { sha?: string };
+      if (data.sha) existingSha = data.sha;
+    }
+  } catch {
+    // se falhar aqui, tratamos como se o arquivo não existisse ainda
+  }
+
+  // 2) Montar body do PUT
+  const payload: any = {
+    message: "Atualizar config.json pelo painel web",
+    content: base64Content,
+    branch,
+  };
+
+  if (existingSha) {
+    payload.sha = existingSha;
+  }
+
+  // 3) Enviar PUT para criar/atualizar o arquivo
+  const putRes = await fetch(baseUrl, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!putRes.ok) {
+    const text = await putRes.text();
+    return jsonResponse(
+      {
+        success: false,
+        error: `GitHub PUT error: ${putRes.status}`,
+        details: text,
+      },
+      putRes.status
+    );
+  }
+
+  return jsonResponse({ success: true }, 200);
 }
