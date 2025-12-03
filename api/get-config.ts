@@ -13,11 +13,18 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
+      "access-control-allow-origin": "*",
+      "access-control-allow-methods": "GET, OPTIONS",
+      "access-control-allow-headers": "*",
     },
   });
 }
 
 export default async function handler(req: Request): Promise<Response> {
+  if (req.method === "OPTIONS") {
+    return jsonResponse({}, 204);
+  }
+
   if (req.method !== "GET") {
     return jsonResponse(
       { success: false, error: "Method not allowed" },
@@ -48,6 +55,7 @@ export default async function handler(req: Request): Promise<Response> {
         Authorization: `Bearer ${token}`,
         Accept: "application/vnd.github+json",
       },
+      cache: "no-store",
     });
 
     if (!res.ok) {
@@ -71,7 +79,6 @@ export default async function handler(req: Request): Promise<Response> {
       );
     }
 
-    // conteúdo vem em base64
     const base64 = data.content.replace(/\n/g, "");
     const jsonString = atob(base64);
     const configObj = JSON.parse(jsonString);
