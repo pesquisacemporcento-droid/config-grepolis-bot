@@ -4,7 +4,7 @@
   "farm": {
     "enabled": true,
     "interval_min": 600,
-    "interval_max": 630,
+    "interval_max": 609,
     "shuffle_cities": true
   },
   "market": {
