@@ -46,8 +46,8 @@ type OnlineStore = {
   [account: string]: {
     [clientId: string]: {
       last_seen: string;
-    }
-  }
+    };
+  };
 };
 
 const CONFIG_FILE = (filePath ? filePath.replace(/\/$/, '') + '/' : '') + 'config-grepolis-bot.json';
@@ -66,9 +66,7 @@ async function loadConfigStore(): Promise<ConfigStore> {
     const json = buff.toString('utf8') || '{}';
     return JSON.parse(json) as ConfigStore;
   } catch (err: any) {
-    if (err?.status === 404) {
-      return {};
-    }
+    if (err?.status === 404) return {};
     throw err;
   }
 }
@@ -86,9 +84,7 @@ async function loadOnlineStore(): Promise<OnlineStore> {
     const json = buff.toString('utf8') || '{}';
     return JSON.parse(json) as OnlineStore;
   } catch (err: any) {
-    if (err?.status === 404) {
-      return {};
-    }
+    if (err?.status === 404) return {};
     throw err;
   }
 }
@@ -99,8 +95,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ ok: false, error: 'Missing GitHub env vars' });
     }
 
-    const store   = await loadConfigStore();
-    const online  = await loadOnlineStore();
+    const store  = await loadConfigStore();
+    const online = await loadOnlineStore();
 
     const now = Date.now();
     const ONLINE_WINDOW_MS = 120_000; // 2 minutos
@@ -108,15 +104,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const accounts = Object.keys(store).map(account => {
       const cfg = store[account];
 
-      let onlineInfo = online[account] || {};
       let lastSeen: string | null = null;
       let isOnline = false;
 
-      for (const clientId of Object.keys(onlineInfo)) {
-        const ts = new Date(onlineInfo[clientId].last_seen).getTime();
+      const info = online[account] || {};
+      for (const clientId of Object.keys(info)) {
+        const tsStr = info[clientId].last_seen;
+        const ts = new Date(tsStr).getTime();
         if (!Number.isNaN(ts)) {
           if (!lastSeen || ts > new Date(lastSeen).getTime()) {
-            lastSeen = onlineInfo[clientId].last_seen;
+            lastSeen = tsStr;
           }
           if (now - ts <= ONLINE_WINDOW_MS) {
             isOnline = true;
