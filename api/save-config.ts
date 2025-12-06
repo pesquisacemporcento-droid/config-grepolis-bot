@@ -11,56 +11,53 @@ const octokit = new Octokit({
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    const { account } = req.query;
-    const accountKey = decodeURIComponent(String(account || 'default'));
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method not allowed' });
+    }
 
+    const { account, config } = req.body;
+
+    if (!account || !config) {
+      return res.status(400).json({ error: 'Missing account or config' });
+    }
+
+    const accountKey = decodeURIComponent(account);
+
+    // Lê o arquivo atual
     let gitFile;
+    let store: any = {};
+    let sha = null;
+
     try {
       gitFile = await octokit.repos.getContent({
         owner: repoOwner,
         repo: repoName,
         path: filePath,
       });
-    } catch (e) {
-      gitFile = null; // arquivo não existe
+
+      if ('content' in gitFile.data) {
+        const raw = Buffer.from(gitFile.data.content, 'base64').toString('utf8');
+        store = JSON.parse(raw);
+        sha = gitFile.data.sha;
+      }
+    } catch {
+      store = {};
+      sha = null;
     }
 
-    let store: any = {};
-    if (gitFile && 'content' in gitFile.data) {
-      const data = Buffer.from(gitFile.data.content, 'base64').toString('utf8');
-      store = JSON.parse(data);
-    }
+    // Atualiza ou cria config
+    store[accountKey] = config;
 
-    const defaultConfig = {
-      enabled: true,
-      farm_level: 'custom',
-      farm: {
-        enabled: true,
-        interval_min: 600,
-        interval_max: 640,
-        shuffle_cities: true,
-      },
-      market: {
-        enabled: false,
-        target_town_id: '',
-        send_wood: true,
-        send_stone: true,
-        send_silver: true,
-        max_storage_percent: 80,
-        max_send_per_trip: 10000,
-        check_interval: 300,
-        delay_between_trips: 60,
-        split_equally: true,
-      },
-    };
-
-    const config = store[accountKey] || defaultConfig;
-
-    return res.status(200).json({
-      ok: true,
-      account: accountKey,
-      config,
+    await octokit.repos.createOrUpdateFileContents({
+      owner: repoOwner,
+      repo: repoName,
+      path: filePath,
+      message: `Update config for ${accountKey}`,
+      content: Buffer.from(JSON.stringify(store, null, 2)).toString('base64'),
+      sha: sha || undefined,
     });
+
+    return res.status(200).json({ ok: true, saved: accountKey });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }
