@@ -1,3 +1,4 @@
+// /api/save-config.ts
 export const config = {
   runtime: 'edge',
 };
@@ -7,36 +8,37 @@ export default async function handler(request: Request) {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
   }
 
-  const token = process.env.GITHUB_TOKEN;
-  const owner = process.env.GITHUB_OWNER || 'pesquisacemporcento-droid';
-  const repo = process.env.GITHUB_REPO || 'config-grepolis-bot';
-  let path = process.env.GITHUB_PATH || 'config-grepolis-bot/config.json';
+  const token  = process.env.GITHUB_TOKEN;
+  const owner  = process.env.GITHUB_OWNER || 'pesquisacemporcento-droid';
+  const repo   = process.env.GITHUB_REPO  || 'config-grepolis-bot';
   const branch = process.env.GITHUB_BRANCH || 'main';
+  const baseDir = (process.env.GITHUB_PATH || 'config-grepolis-bot').replace(/\/$/, '');
 
   if (!token) {
-    return new Response(JSON.stringify({ error: 'Server misconfiguration: Missing GITHUB_TOKEN' }), { status: 500 });
+    return new Response(
+      JSON.stringify({ error: 'Server misconfiguration: Missing GITHUB_TOKEN' }),
+      { status: 500 },
+    );
   }
 
   try {
     const body = await request.json();
-    const { config, account } = body;
+    const { config: cfg, account } = body || {};
 
-    if (!config) {
+    const accountKey = (account || '').trim();
+
+    if (!cfg) {
       return new Response(JSON.stringify({ error: 'Missing config data' }), { status: 400 });
     }
 
-    // Determine filename based on account
-    if (account) {
-      if (path.endsWith('.json')) {
-        path = path.replace('.json', `_${account}.json`);
-      } else {
-        path = `${path}/config_${account}.json`;
-      }
+    if (!accountKey) {
+      return new Response(JSON.stringify({ error: 'Missing account id' }), { status: 400 });
     }
 
-    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+    const path = `${baseDir}/config_${accountKey}.json`;
+    const url  = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
 
-    // 1. Get current SHA to allow update (if file exists)
+    // 1. Verifica se o arquivo já existe para pegar o SHA
     const getResponse = await fetch(`${url}?ref=${branch}`, {
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -49,24 +51,28 @@ export default async function handler(request: Request) {
       const data = await getResponse.json();
       sha = data.sha;
     } else if (getResponse.status !== 404) {
-      // If error is not 404 (File not found), throw it. 
-      // If it IS 404, we just continue (creating new file).
+      // Se não for 404, é erro real
       throw new Error(`Error checking file existence: ${getResponse.status}`);
     }
 
-    // 2. Encode content
-    const contentString = JSON.stringify(config, null, 2);
+    // 2. Monta config com updated_at
+    const configToSave = {
+      ...cfg,
+      updated_at: new Date().toISOString(),
+    };
+
+    const contentString = JSON.stringify(configToSave, null, 2);
     const bytes = new TextEncoder().encode(contentString);
     const binString = Array.from(bytes, byte => String.fromCharCode(byte)).join("");
     const contentBase64 = btoa(binString);
 
     // 3. PUT update/create
-    const putBody = {
-      message: account ? `Update config for ${account}` : 'Update global config',
+    const putBody: any = {
+      message: `Update config for ${accountKey}`,
       content: contentBase64,
-      branch: branch,
-      ...(sha ? { sha } : {}),
+      branch,
     };
+    if (sha) putBody.sha = sha;
 
     const putResponse = await fetch(url, {
       method: 'PUT',
@@ -90,6 +96,9 @@ export default async function handler(request: Request) {
 
   } catch (error: any) {
     console.error("Save error:", error);
-    return new Response(JSON.stringify({ success: false, error: error.message }), { status: 500 });
+    return new Response(
+      JSON.stringify({ success: false, error: error.message }),
+      { status: 500 },
+    );
   }
 }
