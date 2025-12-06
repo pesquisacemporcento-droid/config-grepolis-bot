@@ -1,3 +1,4 @@
+// /api/list-accounts.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Octokit } from '@octokit/rest';
 
@@ -5,6 +6,8 @@ const repoOwner = process.env.GITHUB_OWNER;
 const repoName  = process.env.GITHUB_REPO;
 const filePath  = process.env.GITHUB_PATH;
 const token     = process.env.GITHUB_TOKEN;
+
+const baseDir = filePath ? filePath.replace(/\/$/, '') : '';
 
 const octokit = new Octokit({
   auth: token,
@@ -50,27 +53,65 @@ type OnlineStore = {
   };
 };
 
-const CONFIG_FILE = (filePath ? filePath.replace(/\/$/, '') + '/' : '') + 'config-grepolis-bot.json';
-const ONLINE_FILE = (filePath ? filePath.replace(/\/$/, '') + '/' : '') + 'online-accounts.json';
+const ONLINE_FILE = (baseDir ? baseDir + '/' : '') + 'online-accounts.json';
 
+// ------------------------------------------------------------------
+// Lê todos os config_<account>.json dentro da pasta baseDir
+// ------------------------------------------------------------------
 async function loadConfigStore(): Promise<ConfigStore> {
+  if (!repoOwner || !repoName) return {};
+  const store: ConfigStore = {};
+
   try {
+    const dirPath = baseDir || '';
     const res = await octokit.repos.getContent({
       owner: repoOwner!,
       repo: repoName!,
-      path: CONFIG_FILE,
+      path: dirPath,
     });
 
-    if (!('content' in res.data)) return {};
-    const buff = Buffer.from(res.data.content, 'base64');
-    const json = buff.toString('utf8') || '{}';
-    return JSON.parse(json) as ConfigStore;
+    if (!Array.isArray(res.data)) {
+      // Não é diretório, nada a fazer
+      return store;
+    }
+
+    const files = res.data;
+
+    for (const item of files) {
+      if (item.type !== 'file') continue;
+      const match = item.name.match(/^config_(.+)\.json$/i);
+      if (!match) continue;
+
+      const account = match[1]; // ex: "br14_ANDE LUZ E MARIA"
+      const fileRes = await octokit.repos.getContent({
+        owner: repoOwner!,
+        repo: repoName!,
+        path: item.path!,
+      });
+
+      if (!('content' in fileRes.data)) continue;
+
+      const buff = Buffer.from(fileRes.data.content, 'base64');
+      const jsonStr = buff.toString('utf8') || '{}';
+
+      try {
+        const cfg = JSON.parse(jsonStr) as RootConfig;
+        store[account] = cfg;
+      } catch {
+        // se der parse error, só pula essa conta
+      }
+    }
+
+    return store;
   } catch (err: any) {
     if (err?.status === 404) return {};
     throw err;
   }
 }
 
+// ------------------------------------------------------------------
+// Lê arquivo online-accounts.json (batido pelo heartbeat)
+// ------------------------------------------------------------------
 async function loadOnlineStore(): Promise<OnlineStore> {
   try {
     const res = await octokit.repos.getContent({
@@ -89,9 +130,12 @@ async function loadOnlineStore(): Promise<OnlineStore> {
   }
 }
 
+// ------------------------------------------------------------------
+// Handler principal
+// ------------------------------------------------------------------
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    if (!repoOwner || !repoName || !filePath || !token) {
+    if (!repoOwner || !repoName || !token) {
       return res.status(500).json({ ok: false, error: 'Missing GitHub env vars' });
     }
 
