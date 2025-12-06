@@ -5,7 +5,6 @@ const repoOwner = process.env.GITHUB_OWNER!;
 const repoName = process.env.GITHUB_REPO!;
 const filePath = process.env.GITHUB_PATH!;
 
-
 const octokit = new Octokit({
   auth: process.env.GITHUB_TOKEN,
 });
@@ -15,21 +14,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { account } = req.query;
     const accountKey = decodeURIComponent(String(account || 'default'));
 
-    let gitFile;
+    if (!repoOwner || !repoName || !filePath) {
+      console.error('Env vars faltando:', { repoOwner, repoName, filePath });
+      return res.status(500).json({ error: 'Missing GitHub env vars' });
+    }
+
+    let store: any = {};
+
     try {
-      gitFile = await octokit.repos.getContent({
+      const gitFile = await octokit.repos.getContent({
         owner: repoOwner,
         repo: repoName,
         path: filePath,
       });
-    } catch (e) {
-      gitFile = null; // arquivo não existe
-    }
 
-    let store: any = {};
-    if (gitFile && 'content' in gitFile.data) {
-      const data = Buffer.from(gitFile.data.content, 'base64').toString('utf8');
-      store = JSON.parse(data);
+      if ('content' in gitFile.data) {
+        const raw = Buffer.from(gitFile.data.content, 'base64').toString('utf8').trim();
+        if (raw) {
+          try {
+            store = JSON.parse(raw);
+          } catch (e) {
+            console.error('Erro ao fazer JSON.parse do config.json, usando {}:', e);
+            store = {};
+          }
+        }
+      }
+    } catch (e: any) {
+      // Se o arquivo não existir ainda, começamos com store vazio
+      if (e.status === 404) {
+        console.warn('config.json não encontrado no GitHub, usando store vazio.');
+        store = {};
+      } else {
+        console.error('Erro GitHub getContent:', e);
+        return res.status(500).json({
+          error: 'GitHub getContent failed',
+          detail: e.message || String(e),
+        });
+      }
     }
 
     const defaultConfig = {
@@ -63,6 +84,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       config,
     });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+    console.error('Erro interno em GET /api/get-config:', err);
+    return res.status(500).json({
+      error: 'Internal error',
+      detail: err.message || String(err),
+    });
   }
 }
