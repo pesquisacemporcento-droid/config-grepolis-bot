@@ -20,16 +20,19 @@ export interface MarketConfig {
   split_equally: boolean;
 }
 
-export interface BotConfig {
+export interface RootConfig {
   enabled: boolean;
-  farm_level?: FarmLevel; // Optional in JSON, used for UI state
+  farm_level: FarmLevel | string; // Kept for JSON compatibility
   farm: FarmConfig;
   market: MarketConfig;
 }
 
-export const DEFAULT_CONFIG: BotConfig = {
+// Alias for internal use if needed, but RootConfig is the standard name now
+export type BotConfig = RootConfig;
+
+export const DEFAULT_CONFIG: RootConfig = {
   enabled: true,
-  farm_level: 'nivel2',
+  farm_level: 'custom',
   farm: {
     enabled: true,
     interval_min: 600,
@@ -42,7 +45,7 @@ export const DEFAULT_CONFIG: BotConfig = {
     send_wood: true,
     send_stone: true,
     send_silver: true,
-    max_storage_percent: 100,
+    max_storage_percent: 80,
     max_send_per_trip: 5000,
     check_interval: 300,
     delay_between_trips: 120,

@@ -10,12 +10,13 @@ import {
   Sword, 
   School,
   Target,
-  Sliders,
   Save,
-  Loader2
+  Loader2,
+  User,
+  RefreshCw
 } from 'lucide-react';
-import { Card, Toggle, Input, Checkbox, StatusBadge, SegmentedControl } from './UI';
-import { BotConfig } from '../types';
+import { Card, Toggle, Input, Checkbox, StatusBadge } from './UI';
+import { RootConfig } from '../types';
 
 // Constants for styling
 const INNER_CARD_BG = 'bg-[#09090b]'; // Zinc 950
@@ -38,16 +39,49 @@ const SaveAction: React.FC<SaveActionProps> = ({ onSave, isSaving }) => (
         : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500 hover:bg-zinc-800'
       }
     `}
-    title="Salvar configuração no GitHub"
+    title="Salvar configuração desta seção"
   >
     {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
   </button>
 );
 
+// --- Account Section ---
+interface AccountSectionProps {
+  accountKey: string;
+  setAccountKey: (key: string) => void;
+  isFetching: boolean;
+}
+
+export const AccountSection: React.FC<AccountSectionProps> = ({ accountKey, setAccountKey, isFetching }) => {
+  return (
+    <div className="flex flex-col gap-2 mb-6">
+      <h2 className="text-xs uppercase font-bold text-zinc-500 tracking-wider flex items-center gap-2">
+        <User className="w-3 h-3" /> Conta Atual
+      </h2>
+      <div className="relative">
+        <Input 
+          id="account" // Essential for extension integration
+          label=""
+          placeholder="ex: br14_ANDE LUZ E MARIA"
+          value={accountKey}
+          onChange={(e) => setAccountKey(e.target.value)}
+          className="font-mono text-[#00ffae] pr-10"
+        />
+        <div className="absolute right-3 top-[34px] text-zinc-500">
+           {isFetching && <Loader2 className="w-4 h-4 animate-spin text-[#00ffae]" />}
+        </div>
+      </div>
+      <p className="text-xs text-zinc-500 mt-1">
+        Use o formato <strong>mundo_nick</strong>. Cada conta tem configurações próprias.
+      </p>
+    </div>
+  );
+};
+
 // --- General Section ---
 interface GeneralProps {
-  config: BotConfig;
-  updateConfig: (key: keyof BotConfig, value: any) => void;
+  config: RootConfig;
+  updateConfig: (key: keyof RootConfig, value: any) => void;
 }
 
 export const GeneralSection: React.FC<GeneralProps> = ({ config, updateConfig }) => {
@@ -59,7 +93,7 @@ export const GeneralSection: React.FC<GeneralProps> = ({ config, updateConfig })
         <div className={`flex items-center justify-between p-5 ${INNER_CARD_BG} rounded-xl border ${INNER_BORDER}`}>
           <div>
             <p className="text-zinc-100 font-medium mb-1">Status do Bot</p>
-            <p className="text-xs text-zinc-500">Controle mestre para todas as automações</p>
+            <p className="text-xs text-zinc-500">Controle mestre desta conta</p>
           </div>
           <Toggle 
             checked={config.enabled} 
@@ -73,14 +107,14 @@ export const GeneralSection: React.FC<GeneralProps> = ({ config, updateConfig })
               <Clock className="w-3.5 h-3.5" />
               <span className="text-[10px] uppercase font-bold tracking-wider">Última Execução</span>
             </div>
-            <p className="text-zinc-200 font-mono text-sm">há 5 minutos</p>
+            <p className="text-zinc-200 font-mono text-sm">--</p>
           </div>
           <div className={`p-4 ${INNER_CARD_BG} rounded-xl border ${INNER_BORDER}`}>
             <div className="flex items-center gap-2 text-zinc-500 mb-2">
               <Activity className="w-3.5 h-3.5" />
               <span className="text-[10px] uppercase font-bold tracking-wider">Próxima Ação</span>
             </div>
-            <p className="text-[#00ffae] font-mono text-sm">~120s</p>
+            <p className="text-[#00ffae] font-mono text-sm">--</p>
           </div>
         </div>
       </div>
@@ -88,48 +122,21 @@ export const GeneralSection: React.FC<GeneralProps> = ({ config, updateConfig })
   );
 };
 
-// --- Profile Section ---
-interface ProfileProps {
-  config: BotConfig;
-  onLevelChange: (level: 'nivel1' | 'nivel2' | 'custom') => void;
-}
-
-export const ProfileSection: React.FC<ProfileProps> = ({ config, onLevelChange }) => {
-  return (
-    <Card icon={Sliders} title="Perfil da Conta">
-       <p className="text-sm text-zinc-400 mb-6 leading-relaxed">
-         Selecione o perfil que melhor se adapta ao nível da sua conta para ajustar automaticamente os intervalos de coleta.
-       </p>
-       <SegmentedControl 
-          value={config.farm_level || 'custom'}
-          onChange={onLevelChange}
-          options={[
-            { value: 'nivel1', label: 'Nível 1', description: 'Novas (5 min)' },
-            { value: 'nivel2', label: 'Nível 2', description: 'Avançadas (10 min)' },
-            { value: 'custom', label: 'Personalizado', description: 'Manual' },
-          ]}
-       />
-    </Card>
-  );
-}
-
 // --- Farm Section ---
 interface FarmProps {
-  config: BotConfig;
+  config: RootConfig;
   updateNestedConfig: (section: 'farm' | 'market', key: string, value: any) => void;
-  onManualEdit: () => void;
   onSave: () => Promise<void>;
   errors?: Record<string, string>;
 }
 
-export const FarmSection: React.FC<FarmProps> = ({ config, updateNestedConfig, onManualEdit, onSave, errors }) => {
+export const FarmSection: React.FC<FarmProps> = ({ config, updateNestedConfig, onSave, errors }) => {
   const { farm } = config;
   const [isSaving, setIsSaving] = useState(false);
   
   const handleInputChange = (key: string, rawValue: string) => {
     const value = rawValue === '' ? 0 : parseInt(rawValue);
     updateNestedConfig('farm', key, value);
-    onManualEdit();
   };
 
   const handleSaveClick = async () => {
@@ -147,6 +154,8 @@ export const FarmSection: React.FC<FarmProps> = ({ config, updateNestedConfig, o
     }>
       <div className="space-y-6">
         <div className={`transition-opacity duration-300 ${!farm.enabled ? 'opacity-40 pointer-events-none grayscale' : ''}`}>
+          
+          {/* Inputs Intervalo */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
             <Input 
               label="Intervalo Mínimo" 
@@ -168,26 +177,29 @@ export const FarmSection: React.FC<FarmProps> = ({ config, updateNestedConfig, o
           
           <div className="mb-6 p-1">
             <Checkbox 
-              label="Embaralhar ordem das cidades" 
-              subLabel="Simula comportamento humano variando aleatoriamente a ordem de coleta"
+              label="Embaralhar ordem das cidades (Shuffle)" 
+              subLabel="Simula comportamento humano variando aleatoriamente a ordem das cidades."
               checked={farm.shuffle_cities}
               onChange={(v) => updateNestedConfig('farm', 'shuffle_cities', v)}
             />
           </div>
 
+          {/* Mock Log */}
           <div className={`${INNER_CARD_BG} rounded-xl p-5 border ${INNER_BORDER}`}>
             <h4 className="text-[10px] uppercase text-zinc-500 font-bold mb-3 tracking-widest flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-zinc-600"></span>
-              Log de Atividade (Simulado)
+              Log de Atividade
             </h4>
-            <div className="space-y-3 text-xs font-mono leading-relaxed">
-              <div className="flex justify-between items-start text-[#00ffae]">
-                <span className="flex-1">[10:42] Coleta realizada: Cidade Alpha</span>
-                <span className="text-[10px] bg-[#00ffae]/10 px-2 py-0.5 rounded ml-2 whitespace-nowrap">SUCESSO</span>
+            <div className="space-y-2 text-xs font-mono leading-relaxed h-24 overflow-y-auto custom-scrollbar">
+              <div className="flex justify-between items-start text-zinc-400">
+                <span className="flex-1">[10:42] Próxima coleta em ~600s</span>
+              </div>
+               <div className="flex justify-between items-start text-[#00ffae]">
+                <span className="flex-1">[10:50] Coleta realizada: Cidade 01</span>
+                <span className="text-[10px] bg-[#00ffae]/10 px-2 py-0.5 rounded ml-2 whitespace-nowrap">OK</span>
               </div>
               <div className="flex justify-between items-start text-zinc-500">
-                <span className="flex-1">[10:30] Coleta realizada: Cidade Beta</span>
-                <span className="text-[10px] bg-zinc-800 px-2 py-0.5 rounded ml-2 whitespace-nowrap">OK</span>
+                <span className="flex-1">[10:55] Aguardando ciclo...</span>
               </div>
             </div>
           </div>
@@ -197,9 +209,9 @@ export const FarmSection: React.FC<FarmProps> = ({ config, updateNestedConfig, o
   );
 };
 
-// --- Market Section (formerly Transport) ---
+// --- Market Section ---
 interface MarketProps {
-  config: BotConfig;
+  config: RootConfig;
   updateNestedConfig: (section: 'farm' | 'market', key: string, value: any) => void;
   onSave: () => Promise<void>;
   errors?: Record<string, string>;
@@ -229,18 +241,23 @@ export const MarketSection: React.FC<MarketProps> = ({ config, updateNestedConfi
     }>
        <div className={`space-y-6 transition-opacity duration-300 ${!market.enabled ? 'opacity-40 pointer-events-none grayscale' : ''}`}>
           
-          <Input 
-            label="ID Cidade Destino" 
-            placeholder="Ex: 12345"
-            type="text"
-            value={market.target_town_id}
-            onChange={(e) => updateNestedConfig('market', 'target_town_id', e.target.value)}
-            error={errors?.['market.target_town_id']}
-            className="font-mono"
-          />
+          {/* Linha 1: Target ID */}
+          <div>
+            <Input 
+              label="ID Cidade Destino" 
+              placeholder="ex: 12345"
+              type="text"
+              value={market.target_town_id}
+              onChange={(e) => updateNestedConfig('market', 'target_town_id', e.target.value)}
+              error={errors?.['market.target_town_id']}
+              className="font-mono"
+            />
+            <p className="text-xs text-zinc-500 mt-1 ml-1">O bot vai usar esse ID para localizar a cidade no Mercado e enviar recursos.</p>
+          </div>
 
+          {/* Linha 2: Resources */}
           <div className={`${INNER_CARD_BG} p-5 rounded-xl border ${INNER_BORDER}`}>
-            <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold block mb-4">Recursos a Enviar</span>
+            <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold block mb-4">Tipos de recursos a enviar</span>
             <div className="flex flex-col sm:flex-row gap-4 sm:gap-8">
               <Checkbox 
                 label="Madeira" 
@@ -258,48 +275,71 @@ export const MarketSection: React.FC<MarketProps> = ({ config, updateNestedConfi
                 onChange={(v) => updateNestedConfig('market', 'send_silver', v)}
               />
             </div>
+            <p className="text-xs text-zinc-500 mt-3">O bot só envia os tipos de recursos selecionados.</p>
           </div>
 
+          {/* Linha 3: Limits */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
              <Input 
-              label="Percentual Max. Armazém" 
+              label="Percentual Max. Armazém (%)" 
               type="number" 
               min="1" max="100"
               value={market.max_storage_percent.toString()}
               onChange={(e) => handleIntChange('max_storage_percent', e.target.value)}
-              suffix="%"
               error={errors?.['market.max_storage_percent']}
             />
-             <Input 
-              label="Limite por envio" 
-              type="number" 
-              value={market.max_send_per_trip.toString()}
-              onChange={(e) => handleIntChange('max_send_per_trip', e.target.value)}
-            />
-            <Input 
-              label="Intervalo Verificação" 
-              type="number" 
-              value={market.check_interval.toString()}
-              onChange={(e) => handleIntChange('check_interval', e.target.value)}
-              suffix="seg"
-            />
-             <Input 
-              label="Delay entre envios" 
-              type="number" 
-              value={market.delay_between_trips.toString()}
-              onChange={(e) => handleIntChange('delay_between_trips', e.target.value)}
-              suffix="seg"
-            />
+             <div>
+               <Input 
+                label="Limite por envio (total)" 
+                type="number" 
+                value={market.max_send_per_trip.toString()}
+                onChange={(e) => handleIntChange('max_send_per_trip', e.target.value)}
+              />
+              <p className="text-[10px] text-zinc-500 mt-1 ml-1">Limite máximo por viagem (soma dos recursos).</p>
+             </div>
           </div>
 
-           <div className="pt-2">
+          {/* Linha 4: Intervals */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+             <div>
+                <Input 
+                  label="Intervalo Verificação" 
+                  type="number" 
+                  value={market.check_interval.toString()}
+                  onChange={(e) => handleIntChange('check_interval', e.target.value)}
+                  suffix="seg"
+                />
+                <p className="text-[10px] text-zinc-500 mt-1 ml-1">Tempo entre verificações.</p>
+             </div>
+             <div>
+                <Input 
+                  label="Delay entre envios" 
+                  type="number" 
+                  value={market.delay_between_trips.toString()}
+                  onChange={(e) => handleIntChange('delay_between_trips', e.target.value)}
+                  suffix="seg"
+                />
+                <p className="text-[10px] text-zinc-500 mt-1 ml-1">Mínimo entre envios automáticos.</p>
+             </div>
+          </div>
+
+          {/* Split */}
+          <div className="pt-2">
             <Checkbox 
-                label="Dividir igualmente" 
-                subLabel="Tenta balancear a quantidade enviada de cada recurso selecionado"
+                label="Dividir igualmente entre os recursos selecionados" 
+                subLabel="Se marcado, o bot tenta dividir o total a enviar igualmente entre madeira, pedra e prata."
                 checked={market.split_equally}
                 onChange={(v) => updateNestedConfig('market', 'split_equally', v)}
               />
-           </div>
+          </div>
+
+          {/* Mock Footer Log */}
+          <div className="border-t border-zinc-800/50 pt-4 mt-2">
+             <div className="flex justify-between text-xs text-zinc-500 font-mono">
+                <span>Próxima verificação em ~120s</span>
+                <span className="text-zinc-600">Último envio: 10:35</span>
+             </div>
+          </div>
        </div>
     </Card>
   );

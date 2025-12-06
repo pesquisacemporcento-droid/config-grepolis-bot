@@ -1,55 +1,24 @@
-import React, { useState, useEffect } from 'react';
-import { Settings, Save, Download, Terminal, Copy, Upload, AlertCircle, Loader2 } from 'lucide-react';
-import { BotConfig, DEFAULT_CONFIG, FarmLevel } from './types';
-import { GeneralSection, FarmSection, MarketSection, FutureSection, ProfileSection } from './components/ConfigSections';
-import { TextArea } from './components/UI';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Settings, Save, Download, Terminal, Copy, AlertCircle } from 'lucide-react';
+import { RootConfig, DEFAULT_CONFIG } from './types';
+import { GeneralSection, FarmSection, MarketSection, FutureSection, AccountSection } from './components/ConfigSections';
 
 const App: React.FC = () => {
-  const [config, setConfig] = useState<BotConfig>(DEFAULT_CONFIG);
-  const [loading, setLoading] = useState(true);
+  const [accountKey, setAccountKey] = useState('');
+  const [config, setConfig] = useState<RootConfig>(DEFAULT_CONFIG);
+  const [loading, setLoading] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
-  const [importJson, setImportJson] = useState('');
-  const [importError, setImportError] = useState('');
+  
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [toastMessage, setToastMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
 
-  // --- Load Config from GitHub API on Mount ---
+  // Load account from localStorage on mount (if available from previous session)
   useEffect(() => {
-    const fetchConfig = async () => {
-      try {
-        const res = await fetch('/api/get-config');
-        // Using text() + JSON.parse() is more robust against stream errors than res.json()
-        const text = await res.text();
-        
-        let data;
-        try {
-          data = JSON.parse(text);
-        } catch (e) {
-          console.error("Invalid JSON response:", text);
-          throw new Error("Resposta inválida do servidor");
-        }
-        
-        if (data && data.success && data.config) {
-          setConfig({
-            ...DEFAULT_CONFIG,
-            ...data.config,
-            farm: { ...DEFAULT_CONFIG.farm, ...(data.config.farm || {}) },
-            market: { ...DEFAULT_CONFIG.market, ...(data.config.market || {}) },
-          });
-        } else {
-          console.error("Failed to load config:", data?.error || "Unknown error");
-          showToast('error', data?.error || 'Falha ao carregar configuração');
-        }
-      } catch (error: any) {
-        console.error("Network error:", error);
-        showToast('error', `Erro de conexão: ${error.message || 'Desconhecido'}`);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchConfig();
+    const savedAccount = localStorage.getItem('grepolis_bot_last_account');
+    if (savedAccount) {
+      setAccountKey(savedAccount);
+    }
   }, []);
 
   const showToast = (type: 'success' | 'error', text: string) => {
@@ -57,28 +26,59 @@ const App: React.FC = () => {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  const handleLevelChange = (level: FarmLevel) => {
-    let updates: Partial<BotConfig['farm']> = {};
-    if (level === 'nivel1') {
-      updates = { interval_min: 300, interval_max: 343 };
-    } else if (level === 'nivel2') {
-      updates = { interval_min: 600, interval_max: 637 };
+  const fetchConfig = useCallback(async (acc: string) => {
+    if (!acc.trim()) return;
+    
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/get-config?account=${encodeURIComponent(acc)}`);
+      const text = await res.text();
+      
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        throw new Error("Resposta inválida do servidor");
+      }
+      
+      if (data && data.success && data.config) {
+        // Deep merge to ensure all keys exist
+        setConfig({
+          ...DEFAULT_CONFIG,
+          ...data.config,
+          farm: { ...DEFAULT_CONFIG.farm, ...(data.config.farm || {}) },
+          market: { ...DEFAULT_CONFIG.market, ...(data.config.market || {}) },
+        });
+        
+        if (data.isNew) {
+           showToast('success', `Nova configuração carregada para ${acc}`);
+        }
+      } else {
+        showToast('error', data?.error || 'Falha ao carregar configuração');
+      }
+    } catch (error: any) {
+      console.error("Network error:", error);
+      showToast('error', `Erro de conexão: ${error.message || 'Desconhecido'}`);
+    } finally {
+      setLoading(false);
     }
+  }, []);
 
-    setConfig(prev => ({
-      ...prev,
-      farm_level: level,
-      farm: { ...prev.farm, ...updates }
-    }));
-  };
+  // Automatic fetch when accountKey changes (with debounce)
+  useEffect(() => {
+    if (!accountKey.trim()) return;
 
-  const handleManualFarmEdit = () => {
-    if (config.farm_level !== 'custom') {
-      setConfig(prev => ({ ...prev, farm_level: 'custom' }));
-    }
-  };
+    // Save to local storage for persistence
+    localStorage.setItem('grepolis_bot_last_account', accountKey.trim());
 
-  const updateConfig = (key: keyof BotConfig, value: any) => {
+    const timer = setTimeout(() => {
+      fetchConfig(accountKey.trim());
+    }, 600); // 600ms debounce to wait for typing or extension events
+
+    return () => clearTimeout(timer);
+  }, [accountKey, fetchConfig]);
+
+  const updateConfig = (key: keyof RootConfig, value: any) => {
     setConfig(prev => ({ ...prev, [key]: value }));
     setIsSaved(false);
   };
@@ -112,6 +112,10 @@ const App: React.FC = () => {
   const hasErrors = Object.keys(validationErrors).length > 0;
 
   const handleSaveToGithub = async () => {
+    if (!accountKey.trim()) {
+      showToast('error', 'É necessário informar uma conta.');
+      return;
+    }
     if (hasErrors) {
       showToast('error', 'Corrija os erros antes de salvar.');
       return;
@@ -121,7 +125,10 @@ const App: React.FC = () => {
       const res = await fetch('/api/save-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config }),
+        body: JSON.stringify({ 
+          account: accountKey.trim(),
+          config 
+        }),
       });
       
       const text = await res.text();
@@ -133,7 +140,7 @@ const App: React.FC = () => {
       }
       
       if (data.success) {
-        showToast('success', 'Configuração salva no GitHub com sucesso!');
+        showToast('success', 'Configuração salva com sucesso!');
       } else {
         throw new Error(data.error);
       }
@@ -149,7 +156,7 @@ const App: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'config.json';
+    a.download = `config${accountKey ? `_${accountKey.trim()}` : ''}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -164,31 +171,6 @@ const App: React.FC = () => {
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 3000);
   };
-
-  const handleImport = () => {
-    try {
-      const parsed = JSON.parse(importJson);
-      if (typeof parsed.enabled === 'boolean' && parsed.farm && parsed.market) {
-        setConfig(parsed);
-        setImportJson('');
-        setImportError('');
-        showToast('success', 'JSON importado com sucesso. Lembre-se de salvar.');
-      } else {
-        throw new Error("Formato inválido: Falta 'farm' ou 'market'");
-      }
-    } catch (e) {
-      setImportError('JSON inválido ou incompatível.');
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-zinc-400 gap-3 font-medium">
-        <Loader2 className="w-5 h-5 animate-spin text-[#00ffae]" />
-        <span>Carregando configuração...</span>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans pb-24">
@@ -213,7 +195,7 @@ const App: React.FC = () => {
       <div className="relative max-w-[1100px] mx-auto px-6 py-10 sm:px-8">
         
         {/* Header */}
-        <header className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6">
+        <header className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-6">
           <div className="flex items-center gap-5">
             <div className="p-3.5 bg-zinc-900 border border-zinc-800 rounded-2xl shadow-lg">
               <Settings className="w-7 h-7 text-[#00ffae]" />
@@ -271,16 +253,31 @@ const App: React.FC = () => {
           
           {/* Left Column (Sticky) */}
           <div className="lg:col-span-4 space-y-8 h-fit lg:sticky lg:top-8">
-            <GeneralSection config={config} updateConfig={updateConfig} />
-            <ProfileSection config={config} onLevelChange={handleLevelChange} />
+            <AccountSection 
+              accountKey={accountKey}
+              setAccountKey={setAccountKey}
+              isFetching={loading}
+            />
+            
+            <div className={!accountKey ? 'opacity-50 pointer-events-none' : ''}>
+              <GeneralSection config={config} updateConfig={updateConfig} />
+            </div>
           </div>
 
           {/* Right Column */}
-          <div className="lg:col-span-8 space-y-8">
+          <div className={`lg:col-span-8 space-y-8 ${!accountKey ? 'opacity-50 pointer-events-none' : ''}`}>
+            {!accountKey && (
+              <div className="absolute inset-0 flex items-start justify-center pt-20 z-10 pointer-events-none">
+                 <div className="bg-zinc-900/90 backdrop-blur border border-zinc-700 p-4 rounded-xl shadow-2xl flex items-center gap-3 text-zinc-300">
+                    <AlertCircle className="w-5 h-5 text-[#00ffae]" />
+                    <span>Selecione uma conta para começar a editar</span>
+                 </div>
+              </div>
+            )}
+            
             <FarmSection 
               config={config} 
               updateNestedConfig={updateNestedConfig} 
-              onManualEdit={handleManualFarmEdit}
               onSave={handleSaveToGithub}
               errors={validationErrors}
             />
@@ -291,35 +288,6 @@ const App: React.FC = () => {
               errors={validationErrors}
             />
             <FutureSection />
-            
-            {/* Import Section */}
-            <section className="pt-8 border-t border-zinc-800">
-              <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                <Upload className="w-4 h-4" />
-                Importar Configuração
-              </h3>
-              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-                  <TextArea 
-                    label="Cole o JSON aqui" 
-                    placeholder='{ "enabled": true, ... }'
-                    value={importJson}
-                    onChange={(e) => {
-                      setImportJson(e.target.value);
-                      setImportError('');
-                    }}
-                    error={importError}
-                    className="bg-zinc-950 font-mono text-xs"
-                  />
-                  <div className="mt-4 flex justify-end">
-                    <button 
-                      onClick={handleImport}
-                      className="px-5 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-sm font-medium transition-colors border border-zinc-700"
-                    >
-                      Carregar Dados
-                    </button>
-                  </div>
-              </div>
-            </section>
           </div>
 
         </div>
@@ -327,7 +295,7 @@ const App: React.FC = () => {
         {/* Footer */}
         <footer className="mt-20 py-8 text-center border-t border-zinc-800/50">
           <p className="text-xs text-zinc-600 font-medium">
-            Bot Grepolis – Painel de Controle • v2.0
+            Bot Grepolis – Painel de Controle Multi-Conta • v3.0
           </p>
         </footer>
       </div>
