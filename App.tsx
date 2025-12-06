@@ -26,38 +26,46 @@ const App: React.FC = () => {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
+  /**
+   * Busca a configuração no backend para a conta informada.
+   * Espera resposta no formato:
+   * { ok: boolean, account: string, config: RootConfig, error?: string }
+   */
   const fetchConfig = useCallback(async (acc: string) => {
     if (!acc.trim()) return;
     
     setLoading(true);
     try {
       const res = await fetch(`/api/get-config?account=${encodeURIComponent(acc)}`);
-      const text = await res.text();
-      
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch (e) {
-        throw new Error("Resposta inválida do servidor");
+
+      // tenta ler JSON; se não conseguir, lança erro
+      const data = await res.json().catch(() => {
+        throw new Error('Resposta inválida do servidor');
+      });
+
+      if (!res.ok) {
+        throw new Error(data?.error || `Erro HTTP ${res.status}`);
       }
-      
-      if (data && data.success && data.config) {
-        // Deep merge to ensure all keys exist
+
+      if (data && data.ok && data.config) {
+        // deep merge para garantir todas as chaves
         setConfig({
           ...DEFAULT_CONFIG,
           ...data.config,
           farm: { ...DEFAULT_CONFIG.farm, ...(data.config.farm || {}) },
           market: { ...DEFAULT_CONFIG.market, ...(data.config.market || {}) },
         });
-        
+
         if (data.isNew) {
-           showToast('success', `Nova configuração carregada para ${acc}`);
+          showToast('success', `Nova configuração criada para ${acc}`);
+        } else {
+          showToast('success', `Configuração carregada para ${acc}`);
         }
       } else {
         showToast('error', data?.error || 'Falha ao carregar configuração');
       }
     } catch (error: any) {
-      console.error("Network error:", error);
+      console.error('Erro ao buscar config:', error);
       showToast('error', `Erro de conexão: ${error.message || 'Desconhecido'}`);
     } finally {
       setLoading(false);
@@ -111,6 +119,11 @@ const App: React.FC = () => {
 
   const hasErrors = Object.keys(validationErrors).length > 0;
 
+  /**
+   * Salva a config no backend para a conta atual.
+   * Espera resposta no formato:
+   * { ok: boolean, saved: string, error?: string }
+   */
   const handleSaveToGithub = async () => {
     if (!accountKey.trim()) {
       showToast('error', 'É necessário informar uma conta.');
@@ -130,22 +143,20 @@ const App: React.FC = () => {
           config 
         }),
       });
-      
-      const text = await res.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch (e) {
-        throw new Error("Resposta inválida do servidor ao salvar");
+
+      const data = await res.json().catch(() => {
+        throw new Error('Resposta inválida do servidor ao salvar');
+      });
+
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || `Erro HTTP ${res.status}`);
       }
-      
-      if (data.success) {
-        showToast('success', 'Configuração salva com sucesso!');
-      } else {
-        throw new Error(data.error);
-      }
+
+      showToast('success', `Configuração salva com sucesso para ${accountKey.trim()}!`);
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 3000);
     } catch (e: any) {
-      console.error(e);
+      console.error('Erro ao salvar config:', e);
       showToast('error', `Falha ao salvar: ${e.message || 'Erro desconhecido'}`);
     }
   };
