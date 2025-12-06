@@ -13,10 +13,13 @@ import {
   Save,
   Loader2,
   User,
-  RefreshCw
+  RefreshCw,
+  PlusCircle,
+  Terminal,
+  List
 } from 'lucide-react';
 import { Card, Toggle, Input, Checkbox, StatusBadge } from './UI';
-import { RootConfig } from '../types';
+import { RootConfig, KnownAccount } from '../types';
 
 // Constants for styling
 const INNER_CARD_BG = 'bg-[#09090b]'; // Zinc 950
@@ -39,41 +42,203 @@ const SaveAction: React.FC<SaveActionProps> = ({ onSave, isSaving }) => (
         : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500 hover:bg-zinc-800'
       }
     `}
-    title="Salvar configuração desta seção"
+    title="Salvar configuração"
   >
     {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
   </button>
 );
+
+// --- Logs Section ---
+interface LogsSectionProps {
+  logs: string[];
+}
+
+export const LogsSection: React.FC<LogsSectionProps> = ({ logs }) => {
+  return (
+    <Card icon={Terminal} title="Logs do Painel / Bot">
+      <div className={`w-full h-48 overflow-y-auto custom-scrollbar font-mono text-xs p-4 rounded-lg border ${INNER_BORDER} ${INNER_CARD_BG} text-zinc-400 leading-relaxed`}>
+        {logs.length === 0 ? (
+          <span className="text-zinc-600 italic">Nenhum evento registrado ainda...</span>
+        ) : (
+          logs.map((log, index) => (
+            <div key={index} className="border-b border-zinc-800/50 last:border-0 pb-1 mb-1">
+              <span className="text-zinc-600 mr-2 opacity-75">{log.split(']')[0]}]</span>
+              <span className={log.toLowerCase().includes('erro') ? 'text-red-400' : 'text-zinc-300'}>
+                {log.split(']').slice(1).join(']')}
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+    </Card>
+  );
+};
+
+// --- Quick View Section ---
+interface QuickViewProps {
+  accounts: KnownAccount[];
+  onSelect: (account: string) => void;
+  currentAccount: string;
+}
+
+export const QuickView: React.FC<QuickViewProps> = ({ accounts, onSelect, currentAccount }) => {
+  return (
+    <Card icon={List} title="Contas Configuradas">
+      <div className="mb-3 text-xs text-zinc-500 font-medium px-1">
+        {accounts.length} conta(s) encontrada(s)
+      </div>
+      <div className="max-h-[220px] overflow-y-auto custom-scrollbar space-y-2 pr-1">
+        {accounts.length === 0 ? (
+          <div className="text-zinc-600 text-sm italic text-center py-4">Nenhuma conta salva.</div>
+        ) : (
+          accounts.map((acc) => {
+            const isActive = acc.account === currentAccount;
+            return (
+              <button
+                key={acc.account}
+                onClick={() => onSelect(acc.account)}
+                className={`w-full text-left p-3 rounded-lg border transition-all duration-200 group
+                  ${isActive 
+                    ? 'bg-zinc-900 border-[#00ffae] shadow-[0_0_10px_-5px_#00ffae]' 
+                    : 'bg-[#09090b] border-zinc-800 hover:border-zinc-600'
+                  }
+                `}
+              >
+                <div className="flex justify-between items-start mb-1">
+                  <span className={`text-sm font-semibold truncate ${isActive ? 'text-[#00ffae]' : 'text-zinc-300'}`}>
+                    {acc.account}
+                  </span>
+                  {acc.updatedAt && (
+                     <span className="text-[10px] text-zinc-600">
+                       {new Date(acc.updatedAt).toLocaleDateString('pt-BR')}
+                     </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 text-[10px] font-mono text-zinc-500">
+                  <span className={acc.enabled ? 'text-green-500' : 'text-red-500'}>
+                    BOT: {acc.enabled ? 'ON' : 'OFF'}
+                  </span>
+                  <span>•</span>
+                  <span className={acc.farmEnabled ? 'text-green-500' : 'text-zinc-600'}>
+                    Farm: {acc.intervalMin ?? '?'}–{acc.intervalMax ?? '?'}s
+                  </span>
+                </div>
+              </button>
+            );
+          })
+        )}
+      </div>
+    </Card>
+  );
+};
 
 // --- Account Section ---
 interface AccountSectionProps {
   accountKey: string;
   setAccountKey: (key: string) => void;
   isFetching: boolean;
+  knownAccounts: KnownAccount[];
+  onCreateNew: (name: string) => void;
+  onReloadAccounts: () => void;
 }
 
-export const AccountSection: React.FC<AccountSectionProps> = ({ accountKey, setAccountKey, isFetching }) => {
+export const AccountSection: React.FC<AccountSectionProps> = ({ 
+  accountKey, 
+  setAccountKey, 
+  isFetching,
+  knownAccounts,
+  onCreateNew,
+  onReloadAccounts
+}) => {
+  const [newAccountName, setNewAccountName] = useState('');
+
+  const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    if (e.target.value) {
+      setAccountKey(e.target.value);
+    }
+  };
+
+  const handleCreate = () => {
+    const nameToCreate = newAccountName || accountKey;
+    if (nameToCreate) {
+      onCreateNew(nameToCreate);
+      setNewAccountName('');
+    }
+  };
+
   return (
-    <div className="flex flex-col gap-2 mb-6">
-      <h2 className="text-xs uppercase font-bold text-zinc-500 tracking-wider flex items-center gap-2">
-        <User className="w-3 h-3" /> Conta Atual
-      </h2>
-      <div className="relative">
-        <Input 
-          id="account" // Essential for extension integration
-          label=""
-          placeholder="ex: br14_ANDE LUZ E MARIA"
-          value={accountKey}
-          onChange={(e) => setAccountKey(e.target.value)}
-          className="font-mono text-[#00ffae] pr-10"
-        />
-        <div className="absolute right-3 top-[34px] text-zinc-500">
-           {isFetching && <Loader2 className="w-4 h-4 animate-spin text-[#00ffae]" />}
+    <div className="flex flex-col gap-5 mb-2">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xs uppercase font-bold text-zinc-500 tracking-wider flex items-center gap-2">
+          <User className="w-3 h-3" /> Conta Atual
+        </h2>
+        <button 
+          onClick={onReloadAccounts}
+          className="text-[10px] flex items-center gap-1 text-[#00ffae] hover:underline"
+          title="Recarregar lista de contas"
+        >
+          <RefreshCw className="w-3 h-3" /> Atualizar lista
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        {/* Dropdown for existing */}
+        {knownAccounts.length > 0 && (
+          <div className="relative">
+             <select 
+               value={knownAccounts.find(k => k.account === accountKey) ? accountKey : ''} 
+               onChange={handleSelectChange}
+               className="w-full bg-[#09090b] border border-zinc-700 rounded-lg px-4 py-2.5 text-sm text-zinc-300 focus:outline-none focus:border-[#00ffae] appearance-none cursor-pointer"
+             >
+               <option value="" disabled>Selecione uma conta existente...</option>
+               {knownAccounts.map(acc => (
+                 <option key={acc.account} value={acc.account}>
+                   {acc.account}
+                 </option>
+               ))}
+             </select>
+             <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500">
+               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+             </div>
+          </div>
+        )}
+
+        {/* Manual Input - Essential for Tampermonkey */}
+        <div className="relative group">
+          <Input 
+            id="account" 
+            label="ID da Conta (Input Manual / Extensão)"
+            placeholder="ex: br14_ANDE LUZ E MARIA"
+            value={accountKey}
+            onChange={(e) => setAccountKey(e.target.value)}
+            className="font-mono text-[#00ffae] pr-10"
+          />
+          <div className="absolute right-3 top-[34px] text-zinc-500">
+             {isFetching && <Loader2 className="w-4 h-4 animate-spin text-[#00ffae]" />}
+          </div>
+        </div>
+
+        {/* Create New Area */}
+        <div className="pt-2 border-t border-zinc-800/50">
+          <label className="text-[10px] uppercase text-zinc-500 font-bold mb-2 block">Criar / Usar Nova Conta</label>
+          <div className="flex gap-2">
+             <input 
+               type="text"
+               placeholder="Novo mundo_nick"
+               value={newAccountName}
+               onChange={(e) => setNewAccountName(e.target.value)}
+               className="flex-1 bg-[#09090b] border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-300 focus:border-[#00ffae] focus:outline-none placeholder-zinc-700"
+             />
+             <button 
+                onClick={handleCreate}
+                disabled={!newAccountName && !accountKey}
+                className="bg-zinc-800 hover:bg-[#00ffae]/10 hover:text-[#00ffae] hover:border-[#00ffae] border border-zinc-700 text-zinc-300 rounded-lg px-3 flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+             >
+                <PlusCircle className="w-4 h-4" />
+             </button>
+          </div>
         </div>
       </div>
-      <p className="text-xs text-zinc-500 mt-1">
-        Use o formato <strong>mundo_nick</strong>. Cada conta tem configurações próprias.
-      </p>
     </div>
   );
 };
@@ -188,7 +353,7 @@ export const FarmSection: React.FC<FarmProps> = ({ config, updateNestedConfig, o
           <div className={`${INNER_CARD_BG} rounded-xl p-5 border ${INNER_BORDER}`}>
             <h4 className="text-[10px] uppercase text-zinc-500 font-bold mb-3 tracking-widest flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-zinc-600"></span>
-              Log de Atividade
+              Atividade Recente (Simulado)
             </h4>
             <div className="space-y-2 text-xs font-mono leading-relaxed h-24 overflow-y-auto custom-scrollbar">
               <div className="flex justify-between items-start text-zinc-400">
@@ -197,9 +362,6 @@ export const FarmSection: React.FC<FarmProps> = ({ config, updateNestedConfig, o
                <div className="flex justify-between items-start text-[#00ffae]">
                 <span className="flex-1">[10:50] Coleta realizada: Cidade 01</span>
                 <span className="text-[10px] bg-[#00ffae]/10 px-2 py-0.5 rounded ml-2 whitespace-nowrap">OK</span>
-              </div>
-              <div className="flex justify-between items-start text-zinc-500">
-                <span className="flex-1">[10:55] Aguardando ciclo...</span>
               </div>
             </div>
           </div>

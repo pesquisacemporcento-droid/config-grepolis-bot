@@ -25,10 +25,21 @@ export interface RootConfig {
   farm_level: FarmLevel | string; // Kept for JSON compatibility
   farm: FarmConfig;
   market: MarketConfig;
+  updated_at?: string; // Optional timestamp
 }
 
-// Alias for internal use if needed, but RootConfig is the standard name now
+// Alias for internal use
 export type BotConfig = RootConfig;
+
+// Interface for the account list summary
+export interface KnownAccount {
+  account: string;
+  enabled: boolean;
+  farmEnabled: boolean;
+  intervalMin: number | null;
+  intervalMax: number | null;
+  updatedAt: string | null;
+}
 
 export const DEFAULT_CONFIG: RootConfig = {
   enabled: true,

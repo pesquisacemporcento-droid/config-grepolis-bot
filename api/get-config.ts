@@ -1,93 +1,87 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { Octokit } from '@octokit/rest';
+import { DEFAULT_CONFIG } from '../types';
 
-const repoOwner = process.env.GITHUB_OWNER!;
-const repoName = process.env.GITHUB_REPO!;
-const filePath = process.env.GITHUB_PATH!;
+export const config = {
+  runtime: 'edge',
+};
 
-const octokit = new Octokit({
-  auth: process.env.GITHUB_TOKEN,
-});
+export default async function handler(request: Request) {
+  if (request.method !== 'GET') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
+  }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  try {
-    const { account } = req.query;
-    const accountKey = decodeURIComponent(String(account || 'default'));
+  const urlObj = new URL(request.url);
+  const accountKey = urlObj.searchParams.get('account');
 
-    if (!repoOwner || !repoName || !filePath) {
-      console.error('Env vars faltando:', { repoOwner, repoName, filePath });
-      return res.status(500).json({ error: 'Missing GitHub env vars' });
+  // If no account is provided, we can either return an error or the "global" config.
+  // Based on the new requirement, we should prioritize account-based configs.
+  // We'll use a specific filename format: config_<accountKey>.json
+  
+  const token = process.env.GITHUB_TOKEN;
+  const owner = process.env.GITHUB_OWNER || 'pesquisacemporcento-droid';
+  const repo = process.env.GITHUB_REPO || 'config-grepolis-bot';
+  // Base path usually: config-grepolis-bot/config.json
+  let path = process.env.GITHUB_PATH || 'config-grepolis-bot/config.json';
+  const branch = process.env.GITHUB_BRANCH || 'main';
+
+  if (!token) {
+    return new Response(JSON.stringify({ error: 'Server misconfiguration: Missing GITHUB_TOKEN' }), { status: 500 });
+  }
+
+  // Determine filename based on account
+  if (accountKey) {
+    // Replace 'config.json' with 'config_<account>.json' or append if path is just a directory
+    if (path.endsWith('.json')) {
+      path = path.replace('.json', `_${accountKey}.json`);
+    } else {
+      path = `${path}/config_${accountKey}.json`;
     }
+  }
 
-    let store: any = {};
+  try {
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
+    
+    const response = await fetch(apiUrl, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+      },
+    });
 
-    try {
-      const gitFile = await octokit.repos.getContent({
-        owner: repoOwner,
-        repo: repoName,
-        path: filePath,
-      });
-
-      if ('content' in gitFile.data) {
-        const raw = Buffer.from(gitFile.data.content, 'base64').toString('utf8').trim();
-        if (raw) {
-          try {
-            store = JSON.parse(raw);
-          } catch (e) {
-            console.error('Erro ao fazer JSON.parse do config.json, usando {}:', e);
-            store = {};
-          }
-        }
-      }
-    } catch (e: any) {
-      // Se o arquivo não existir ainda, começamos com store vazio
-      if (e.status === 404) {
-        console.warn('config.json não encontrado no GitHub, usando store vazio.');
-        store = {};
-      } else {
-        console.error('Erro GitHub getContent:', e);
-        return res.status(500).json({
-          error: 'GitHub getContent failed',
-          detail: e.message || String(e),
+    if (!response.ok) {
+      if (response.status === 404) {
+        // IMPORTANT: If file doesn't exist for this account, return DEFAULT CONFIG
+        // This allows the frontend to start fresh without errors.
+        return new Response(JSON.stringify({ success: true, config: DEFAULT_CONFIG, isNew: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
         });
       }
+      throw new Error(`GitHub API responded with ${response.status}`);
     }
 
-    const defaultConfig = {
-      enabled: true,
-      farm_level: 'custom',
-      farm: {
-        enabled: true,
-        interval_min: 600,
-        interval_max: 640,
-        shuffle_cities: true,
-      },
-      market: {
-        enabled: false,
-        target_town_id: '',
-        send_wood: true,
-        send_stone: true,
-        send_silver: true,
-        max_storage_percent: 80,
-        max_send_per_trip: 10000,
-        check_interval: 300,
-        delay_between_trips: 60,
-        split_equally: true,
-      },
+    const data = await response.json();
+    
+    // Decode Content
+    const rawContent = atob(data.content.replace(/\n/g, ''));
+    const bytes = Uint8Array.from(rawContent, c => c.charCodeAt(0));
+    const decodedContent = new TextDecoder().decode(bytes);
+    
+    const jsonConfig = JSON.parse(decodedContent);
+
+    // Merge with DEFAULT_CONFIG to ensure all keys exist (schema migration)
+    const finalConfig = {
+      ...DEFAULT_CONFIG,
+      ...jsonConfig,
+      farm: { ...DEFAULT_CONFIG.farm, ...(jsonConfig.farm || {}) },
+      market: { ...DEFAULT_CONFIG.market, ...(jsonConfig.market || {}) }
     };
 
-    const config = store[accountKey] || defaultConfig;
+    return new Response(JSON.stringify({ success: true, config: finalConfig }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
 
-    return res.status(200).json({
-      ok: true,
-      account: accountKey,
-      config,
-    });
-  } catch (err: any) {
-    console.error('Erro interno em GET /api/get-config:', err);
-    return res.status(500).json({
-      error: 'Internal error',
-      detail: err.message || String(err),
-    });
+  } catch (error: any) {
+    return new Response(JSON.stringify({ success: false, error: error.message }), { status: 500 });
   }
 }

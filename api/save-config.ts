@@ -1,71 +1,95 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { Octokit } from '@octokit/rest';
-
-const repoOwner = process.env.GITHUB_OWNER!;
-const repoName = process.env.GITHUB_REPO!;
-const filePath = process.env.GITHUB_PATH!;
-
-
-const octokit = new Octokit({
-  auth: process.env.GITHUB_TOKEN,
-});
-
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  try {
-    if (req.method !== 'POST') {
-      return res.status(405).json({ error: 'Method not allowed' });
-    }
-
-    const { account, config } = req.body;
-
-    if (!account || !config) {
-      return res.status(400).json({ error: 'Missing account or config' });
-    }
-
-    const accountKey = decodeURIComponent(account);
-
-    // Lê o arquivo atual
-    let gitFile;
-    let store: any = {};
-    let sha = null;
-
-    try {
-      gitFile = await octokit.repos.getContent({
-        owner: repoOwner,
-        repo: repoName,
-        path: filePath,
-      });
-
-      if ('content' in gitFile.data) {
-        const raw = Buffer.from(gitFile.data.content, 'base64').toString('utf8');
-        store = JSON.parse(raw);
-        sha = gitFile.data.sha;
-      }
-    } catch {
-      store = {};
-      sha = null;
-    }
-
-    // Atualiza / cria config da conta, adicionando metadata
-const withMeta = {
-  ...config,
-  updated_at: new Date().toISOString(),
+export const config = {
+  runtime: 'edge',
 };
 
-store[accountKey] = withMeta;
+export default async function handler(request: Request) {
+  if (request.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
+  }
 
+  const token = process.env.GITHUB_TOKEN;
+  const owner = process.env.GITHUB_OWNER || 'pesquisacemporcento-droid';
+  const repo = process.env.GITHUB_REPO || 'config-grepolis-bot';
+  let path = process.env.GITHUB_PATH || 'config-grepolis-bot/config.json';
+  const branch = process.env.GITHUB_BRANCH || 'main';
 
-    await octokit.repos.createOrUpdateFileContents({
-      owner: repoOwner,
-      repo: repoName,
-      path: filePath,
-      message: `Update config for ${accountKey}`,
-      content: Buffer.from(JSON.stringify(store, null, 2)).toString('base64'),
-      sha: sha || undefined,
+  if (!token) {
+    return new Response(JSON.stringify({ error: 'Server misconfiguration: Missing GITHUB_TOKEN' }), { status: 500 });
+  }
+
+  try {
+    const body = await request.json();
+    const { config, account } = body;
+
+    if (!config) {
+      return new Response(JSON.stringify({ error: 'Missing config data' }), { status: 400 });
+    }
+
+    // Determine filename based on account
+    if (account) {
+      if (path.endsWith('.json')) {
+        path = path.replace('.json', `_${account}.json`);
+      } else {
+        path = `${path}/config_${account}.json`;
+      }
+    }
+
+    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+
+    // 1. Get current SHA to allow update (if file exists)
+    const getResponse = await fetch(`${url}?ref=${branch}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+      },
     });
 
-    return res.status(200).json({ ok: true, saved: accountKey });
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+    let sha = '';
+    if (getResponse.ok) {
+      const data = await getResponse.json();
+      sha = data.sha;
+    } else if (getResponse.status !== 404) {
+      // If error is not 404 (File not found), throw it. 
+      // If it IS 404, we just continue (creating new file).
+      throw new Error(`Error checking file existence: ${getResponse.status}`);
+    }
+
+    // 2. Encode content
+    const contentString = JSON.stringify(config, null, 2);
+    const bytes = new TextEncoder().encode(contentString);
+    const binString = Array.from(bytes, byte => String.fromCharCode(byte)).join("");
+    const contentBase64 = btoa(binString);
+
+    // 3. PUT update/create
+    const putBody = {
+      message: account ? `Update config for ${account}` : 'Update global config',
+      content: contentBase64,
+      branch: branch,
+      ...(sha ? { sha } : {}),
+    };
+
+    const putResponse = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/vnd.github.v3+json',
+      },
+      body: JSON.stringify(putBody),
+    });
+
+    if (!putResponse.ok) {
+      const errorData = await putResponse.json();
+      throw new Error(errorData.message || `GitHub API error: ${putResponse.status}`);
+    }
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+  } catch (error: any) {
+    console.error("Save error:", error);
+    return new Response(JSON.stringify({ success: false, error: error.message }), { status: 500 });
   }
 }
