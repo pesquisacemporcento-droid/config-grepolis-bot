@@ -1,107 +1,144 @@
-import { RootConfig } from '../types';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { Octokit } from '@octokit/rest';
 
-export const config = {
-  runtime: 'edge',
+const repoOwner = process.env.GITHUB_OWNER;
+const repoName  = process.env.GITHUB_REPO;
+const filePath  = process.env.GITHUB_PATH;
+const token     = process.env.GITHUB_TOKEN;
+
+const octokit = new Octokit({
+  auth: token,
+});
+
+type FarmConfig = {
+  enabled: boolean;
+  interval_min: number;
+  interval_max: number;
+  shuffle_cities: boolean;
 };
 
-export default async function handler(request: Request) {
-  if (request.method !== 'GET') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
+type MarketConfig = {
+  enabled: boolean;
+  target_town_id: string;
+  send_wood: boolean;
+  send_stone: boolean;
+  send_silver: boolean;
+  max_storage_percent: number;
+  max_send_per_trip: number;
+  check_interval: number;
+  delay_between_trips: number;
+  split_equally: boolean;
+};
+
+type RootConfig = {
+  enabled: boolean;
+  farm_level: string;
+  farm: FarmConfig;
+  market: MarketConfig;
+  updated_at?: string;
+};
+
+type ConfigStore = {
+  [account: string]: RootConfig;
+};
+
+type OnlineStore = {
+  [account: string]: {
+    [clientId: string]: {
+      last_seen: string;
+    }
   }
+};
 
-  const token = process.env.GITHUB_TOKEN;
-  const owner = process.env.GITHUB_OWNER || 'pesquisacemporcento-droid';
-  const repo = process.env.GITHUB_REPO || 'config-grepolis-bot';
-  const path = process.env.GITHUB_PATH || 'config-grepolis-bot'; // Directory path
-  const branch = process.env.GITHUB_BRANCH || 'main';
+const CONFIG_FILE = (filePath ? filePath.replace(/\/$/, '') + '/' : '') + 'config-grepolis-bot.json';
+const ONLINE_FILE = (filePath ? filePath.replace(/\/$/, '') + '/' : '') + 'online-accounts.json';
 
-  if (!token) {
-    return new Response(JSON.stringify({ error: 'Server misconfiguration: Missing GITHUB_TOKEN' }), { status: 500 });
-  }
-
+async function loadConfigStore(): Promise<ConfigStore> {
   try {
-    // 1. List files in the directory
-    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
-    
-    const response = await fetch(apiUrl, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/vnd.github.v3+json',
-      },
+    const res = await octokit.repos.getContent({
+      owner: repoOwner!,
+      repo: repoName!,
+      path: CONFIG_FILE,
     });
 
-    if (!response.ok) {
-        if (response.status === 404) {
-             // Repo or path might be empty or not exist yet
-             return new Response(JSON.stringify({ ok: true, accounts: [] }), { status: 200 });
-        }
-        throw new Error(`GitHub API responded with ${response.status}`);
+    if (!('content' in res.data)) return {};
+    const buff = Buffer.from(res.data.content, 'base64');
+    const json = buff.toString('utf8') || '{}';
+    return JSON.parse(json) as ConfigStore;
+  } catch (err: any) {
+    if (err?.status === 404) {
+      return {};
     }
+    throw err;
+  }
+}
 
-    const files = await response.json();
-
-    if (!Array.isArray(files)) {
-        return new Response(JSON.stringify({ ok: true, accounts: [] }), { status: 200 });
-    }
-
-    // 2. Filter for config_*.json files
-    const accountFiles = files.filter((f: any) => 
-        f.name.startsWith('config_') && f.name.endsWith('.json')
-    );
-
-    // 3. Fetch content for each file to get status details (Parallel)
-    // We use file.url (API) instead of download_url (Raw) to ensure authentication headers work correctly for private repos.
-    const accountsData = await Promise.all(accountFiles.map(async (file: any) => {
-        try {
-            // Extract account name: config_br14_Nick.json -> br14_Nick
-            const accountName = file.name.replace(/^config_/, '').replace(/\.json$/, '');
-            
-            // Fetch content using the API URL provided in the file object
-            const contentRes = await fetch(file.url, {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Accept': 'application/vnd.github.v3+json',
-                },
-            });
-            
-            if (!contentRes.ok) {
-                // If specific file fetch fails, just skip it
-                console.warn(`Failed to fetch content for ${file.name}: ${contentRes.status}`);
-                return null;
-            }
-
-            const fileData = await contentRes.json();
-            
-            // GitHub API returns content in base64, possibly with newlines
-            if (!fileData.content) return null;
-            
-            const rawContent = atob(fileData.content.replace(/\n/g, ''));
-            const json: RootConfig = JSON.parse(rawContent);
-
-            return {
-                account: accountName,
-                enabled: json.enabled ?? false,
-                farmEnabled: json.farm?.enabled ?? false,
-                intervalMin: json.farm?.interval_min ?? null,
-                intervalMax: json.farm?.interval_max ?? null,
-                updatedAt: json.updated_at ?? null
-            };
-        } catch (e) {
-            console.error(`Failed to parse config for ${file.name}`, e);
-            return null;
-        }
-    }));
-
-    // Filter out any failed fetches (nulls)
-    const validAccounts = accountsData.filter(a => a !== null);
-
-    return new Response(JSON.stringify({ ok: true, accounts: validAccounts }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
+async function loadOnlineStore(): Promise<OnlineStore> {
+  try {
+    const res = await octokit.repos.getContent({
+      owner: repoOwner!,
+      repo: repoName!,
+      path: ONLINE_FILE,
     });
 
-  } catch (error: any) {
-    console.error("List accounts error:", error);
-    return new Response(JSON.stringify({ ok: false, error: error.message }), { status: 500 });
+    if (!('content' in res.data)) return {};
+    const buff = Buffer.from(res.data.content, 'base64');
+    const json = buff.toString('utf8') || '{}';
+    return JSON.parse(json) as OnlineStore;
+  } catch (err: any) {
+    if (err?.status === 404) {
+      return {};
+    }
+    throw err;
+  }
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  try {
+    if (!repoOwner || !repoName || !filePath || !token) {
+      return res.status(500).json({ ok: false, error: 'Missing GitHub env vars' });
+    }
+
+    const store   = await loadConfigStore();
+    const online  = await loadOnlineStore();
+
+    const now = Date.now();
+    const ONLINE_WINDOW_MS = 120_000; // 2 minutos
+
+    const accounts = Object.keys(store).map(account => {
+      const cfg = store[account];
+
+      let onlineInfo = online[account] || {};
+      let lastSeen: string | null = null;
+      let isOnline = false;
+
+      for (const clientId of Object.keys(onlineInfo)) {
+        const ts = new Date(onlineInfo[clientId].last_seen).getTime();
+        if (!Number.isNaN(ts)) {
+          if (!lastSeen || ts > new Date(lastSeen).getTime()) {
+            lastSeen = onlineInfo[clientId].last_seen;
+          }
+          if (now - ts <= ONLINE_WINDOW_MS) {
+            isOnline = true;
+          }
+        }
+      }
+
+      return {
+        account,
+        enabled: !!cfg.enabled,
+        farmEnabled: !!cfg.farm?.enabled,
+        intervalMin: cfg.farm?.interval_min ?? null,
+        intervalMax: cfg.farm?.interval_max ?? null,
+        updatedAt: cfg.updated_at || null,
+        online: isOnline,
+        lastSeen,
+      };
+    });
+
+    return res.status(200).json({ ok: true, accounts });
+  } catch (err: any) {
+    console.error('list-accounts error:', err);
+    return res.status(500).json({ ok: false, error: err.message || 'Failed to list accounts' });
   }
 }
