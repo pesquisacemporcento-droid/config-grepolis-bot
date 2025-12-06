@@ -46,8 +46,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       sha = null;
     }
 
-    // Atualiza ou cria config
-    store[accountKey] = config;
+    // Atualiza / cria config da conta, adicionando metadata
+const withMeta = {
+  ...config,
+  updated_at: new Date().toISOString(),
+};
+
+store[accountKey] = withMeta;
+
 
     await octokit.repos.createOrUpdateFileContents({
       owner: repoOwner,
