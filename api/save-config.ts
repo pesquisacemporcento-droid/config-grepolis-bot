@@ -1,9 +1,10 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { Octokit } from '@octokit/rest';
 
-const repoOwner = 'SEU_USUARIO_GITHUB';
-const repoName = 'SEU_REPOSITORIO';
-const filePath = 'config-grepolis-bot/config.json';
+const repoOwner = process.env.GITHUB_OWNER!;
+const repoName = process.env.GITHUB_REPO!;
+const filePath = process.env.GITHUB_PATH!;
+
 
 const octokit = new Octokit({
   auth: process.env.GITHUB_TOKEN,
