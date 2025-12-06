@@ -1,0 +1,23 @@
+{
+  "enabled": true,
+  "farm_level": "custom",
+  "farm": {
+    "enabled": true,
+    "interval_min": 600,
+    "interval_max": 637,
+    "shuffle_cities": true
+  },
+  "market": {
+    "enabled": false,
+    "target_town_id": "",
+    "send_wood": true,
+    "send_stone": true,
+    "send_silver": true,
+    "max_storage_percent": 80,
+    "max_send_per_trip": 5000,
+    "check_interval": 300,
+    "delay_between_trips": 120,
+    "split_equally": true
+  },
+  "updated_at": "2025-12-06T23:52:17.688Z"
+}
