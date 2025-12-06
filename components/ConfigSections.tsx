@@ -27,16 +27,14 @@ const INNER_CARD_BG = 'bg-[#09090b]'; // Zinc 950
 const INNER_BORDER = 'border-[#27272a]'; // Zinc 800
 
 // --- Helper Functions ---
-const timeAgo = (dateStr: string | null) => {
+const formatDate = (dateStr: string | null) => {
   if (!dateStr) return '';
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diff = (now.getTime() - date.getTime()) / 1000; // seconds
-
-  if (diff < 60) return 'agora';
-  if (diff < 3600) return `há ${Math.floor(diff / 60)} min`;
-  if (diff < 86400) return `há ${Math.floor(diff / 3600)} h`;
-  return `há ${Math.floor(diff / 86400)} d`;
+  return new Date(dateStr).toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
 };
 
 // --- Helper for Save Button ---
@@ -136,11 +134,11 @@ export const QuickView: React.FC<QuickViewProps> = ({ accounts, onSelect, curren
                 <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500">
                   <div className="flex items-center gap-2">
                     <span className={acc.farmEnabled ? 'text-green-500/80' : 'text-zinc-600'}>
-                      Farm: {acc.intervalMin ?? '?'}–{acc.intervalMax ?? '?'}s
+                      {acc.intervalMin ?? '?'}–{acc.intervalMax ?? '?'}s
                     </span>
                   </div>
                   {acc.updatedAt && (
-                     <span>{timeAgo(acc.updatedAt)}</span>
+                     <span>{formatDate(acc.updatedAt)}</span>
                   )}
                 </div>
               </button>

@@ -1,202 +1,135 @@
-// /api/list-accounts.ts
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { Octokit } from '@octokit/rest';
+// Remove external import to ensure Edge function isolation stability
+// import { RootConfig } from '../types';
 
-const repoOwner = process.env.GITHUB_OWNER;
-const repoName  = process.env.GITHUB_REPO;
-const filePath  = process.env.GITHUB_PATH; // ex: "config-grepolis-bot"
-const token     = process.env.GITHUB_TOKEN;
-
-const baseDir = filePath ? filePath.replace(/\/$/, '') : ''; // tira barra no final, se tiver
-
-const octokit = new Octokit({
-  auth: token,
-});
-
-type FarmConfig = {
-  enabled: boolean;
-  interval_min: number;
-  interval_max: number;
-  shuffle_cities: boolean;
+export const config = {
+  runtime: 'edge',
 };
 
-type MarketConfig = {
-  enabled: boolean;
-  target_town_id: string;
-  send_wood: boolean;
-  send_stone: boolean;
-  send_silver: boolean;
-  max_storage_percent: number;
-  max_send_per_trip: number;
-  check_interval: number;
-  delay_between_trips: number;
-  split_equally: boolean;
-};
-
-type RootConfig = {
-  enabled: boolean;
-  farm_level: string;
-  farm: FarmConfig;
-  market: MarketConfig;
-  updated_at?: string;
-};
-
-type ConfigStore = {
-  [account: string]: RootConfig;
-};
-
-type OnlineStore = {
-  [account: string]: {
-    [clientId: string]: {
-      last_seen: string;
-    };
+// Define minimal interface locally
+interface ConfigFile {
+  enabled?: boolean;
+  farm?: {
+    enabled: boolean;
+    interval_min: number;
+    interval_max: number;
   };
-};
-
-const ONLINE_FILE = (baseDir ? baseDir + '/' : '') + 'online-accounts.json';
-
-// ------------------------------------------------------------------
-// Lê todos os config_<account>.json dentro da pasta baseDir
-// ------------------------------------------------------------------
-async function loadConfigStore(): Promise<ConfigStore> {
-  const store: ConfigStore = {};
-
-  if (!repoOwner || !repoName) return store;
-
-  try {
-    const dirPath = baseDir || ''; // ex: "config-grepolis-bot"
-    const res = await octokit.repos.getContent({
-      owner: repoOwner!,
-      repo: repoName!,
-      path: dirPath,
-    });
-
-    if (!Array.isArray(res.data)) {
-      // Não é diretório
-      return store;
-    }
-
-    const files = res.data;
-
-    for (const item of files) {
-      if (item.type !== 'file') continue;
-      // Procurar arquivos do tipo config_<ACCOUNT>.json
-      const match = item.name.match(/^config_(.+)\.json$/i);
-      if (!match) continue;
-
-      const account = match[1]; // ex: "br14_ANDE LUZ E MARIA"
-
-      const fileRes = await octokit.repos.getContent({
-        owner: repoOwner!,
-        repo: repoName!,
-        path: item.path!, // caminho completo dentro do repo
-      });
-
-      if (!('content' in fileRes.data)) continue;
-
-      const buff = Buffer.from(fileRes.data.content, 'base64');
-      const jsonStr = buff.toString('utf8') || '{}';
-
-      try {
-        const cfg = JSON.parse(jsonStr) as RootConfig;
-        store[account] = cfg;
-      } catch (e) {
-        // Se der erro de parse, ignora essa conta
-        console.warn('Erro parse config for account', account);
-      }
-    }
-
-    return store;
-  } catch (err: any) {
-    if (err?.status === 404) {
-      // Pasta não encontrada
-      return {};
-    }
-    throw err;
-  }
+  updated_at?: string;
 }
 
-// ------------------------------------------------------------------
-// Lê arquivo online-accounts.json (batido pelo heartbeat)
-// ------------------------------------------------------------------
-async function loadOnlineStore(): Promise<OnlineStore> {
-  if (!repoOwner || !repoName) return {};
+export default async function handler(request: Request) {
+  // Common headers for JSON response + CORS
+  const headers = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    'Cache-Control': 'no-store, max-age=0', // Prevent caching of the account list
+  };
+
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { ...headers, 'Access-Control-Allow-Methods': 'GET, OPTIONS' } });
+  }
+
+  if (request.method !== 'GET') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers });
+  }
+
+  const token = process.env.GITHUB_TOKEN;
+  const owner = process.env.GITHUB_OWNER || 'pesquisacemporcento-droid';
+  const repo = process.env.GITHUB_REPO || 'config-grepolis-bot';
+  const path = process.env.GITHUB_PATH || 'config-grepolis-bot';
+  const branch = process.env.GITHUB_BRANCH || 'main';
+
+  if (!token) {
+    return new Response(JSON.stringify({ error: 'Server misconfiguration: Missing GITHUB_TOKEN' }), { status: 500, headers });
+  }
 
   try {
-    const res = await octokit.repos.getContent({
-      owner: repoOwner!,
-      repo: repoName!,
-      path: ONLINE_FILE,
+    // 1. List files in the directory
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
+    
+    const response = await fetch(apiUrl, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+      },
     });
 
-    if (!('content' in res.data)) return {};
-    const buff = Buffer.from(res.data.content, 'base64');
-    const json = buff.toString('utf8') || '{}';
-    return JSON.parse(json) as OnlineStore;
-  } catch (err: any) {
-    if (err?.status === 404) return {};
-    throw err;
-  }
-}
-
-// ------------------------------------------------------------------
-// Handler principal
-// ------------------------------------------------------------------
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  try {
-    if (!repoOwner || !repoName || !token) {
-      return res.status(500).json({ ok: false, error: 'Missing GitHub env vars' });
-    }
-
-    const store  = await loadConfigStore();
-    const online = await loadOnlineStore();
-
-    const now = Date.now();
-    const ONLINE_WINDOW_MS = 120_000; // 2 minutos
-
-    // ⚠️ IMPORTANTE:
-    // Usar a UNIÃO das contas que têm config + contas que estão online,
-    // assim até contas que só mandaram heartbeat aparecem na lista.
-    const accountSet = new Set<string>([
-      ...Object.keys(store),
-      ...Object.keys(online),
-    ]);
-
-    const accounts = Array.from(accountSet).map(account => {
-      const cfg: RootConfig | undefined = store[account];
-
-      let lastSeen: string | null = null;
-      let isOnline = false;
-
-      const info = online[account] || {};
-      for (const clientId of Object.keys(info)) {
-        const tsStr = info[clientId].last_seen;
-        const ts = new Date(tsStr).getTime();
-        if (!Number.isNaN(ts)) {
-          if (!lastSeen || ts > new Date(lastSeen).getTime()) {
-            lastSeen = tsStr;
-          }
-          if (now - ts <= ONLINE_WINDOW_MS) {
-            isOnline = true;
-          }
+    if (!response.ok) {
+        if (response.status === 404) {
+             // Repo or path might be empty or not exist yet
+             return new Response(JSON.stringify({ ok: true, accounts: [] }), { status: 200, headers });
         }
-      }
+        throw new Error(`GitHub API responded with ${response.status}`);
+    }
 
-      return {
-        account,
-        enabled: !!cfg?.enabled,
-        farmEnabled: !!cfg?.farm?.enabled,
-        intervalMin: cfg?.farm?.interval_min ?? null,
-        intervalMax: cfg?.farm?.interval_max ?? null,
-        updatedAt: cfg?.updated_at || null,
-        online: isOnline,
-        lastSeen,
-      };
-    });
+    const files = await response.json();
 
-    return res.status(200).json({ ok: true, accounts });
-  } catch (err: any) {
-    console.error('list-accounts error:', err);
-    return res.status(500).json({ ok: false, error: err.message || 'Failed to list accounts' });
+    if (!Array.isArray(files)) {
+        return new Response(JSON.stringify({ ok: true, accounts: [] }), { status: 200, headers });
+    }
+
+    // 2. Filter for config_*.json files
+    const accountFiles = files.filter((f: any) => 
+        f.name && f.name.startsWith('config_') && f.name.endsWith('.json')
+    );
+
+    // 3. Fetch content for each file to get status details (Parallel)
+    const accountsData = await Promise.all(accountFiles.map(async (file: any) => {
+        try {
+            // Extract account name: config_br14_Nick.json -> br14_Nick
+            const accountName = file.name.replace(/^config_/, '').replace(/\.json$/, '');
+            
+            // Fetch content using the API URL provided in the file object (Authenticated)
+            const contentRes = await fetch(file.url, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                },
+            });
+            
+            if (!contentRes.ok) {
+                console.warn(`Failed to fetch content for ${file.name}: ${contentRes.status}`);
+                return null;
+            }
+
+            const fileData = await contentRes.json();
+            
+            if (!fileData.content) return null;
+            
+            // Robust UTF-8 Decoding
+            // 1. Decode Base64 to binary string (latin1)
+            const rawContent = atob(fileData.content.replace(/\n/g, ''));
+            // 2. Convert binary string to Uint8Array
+            const bytes = Uint8Array.from(rawContent, c => c.charCodeAt(0));
+            // 3. Decode UTF-8 bytes to string
+            const decodedContent = new TextDecoder().decode(bytes);
+            
+            const json = JSON.parse(decodedContent) as ConfigFile;
+
+            return {
+                account: accountName,
+                enabled: json.enabled ?? false,
+                farmEnabled: json.farm?.enabled ?? false,
+                intervalMin: json.farm?.interval_min ?? null,
+                intervalMax: json.farm?.interval_max ?? null,
+                updatedAt: json.updated_at ?? null,
+                // Without a database, we cannot persist online state between requests.
+                // Defaulting to false. A KV store (Vercel KV/Redis) is needed for this feature.
+                online: false, 
+                lastSeen: null 
+            };
+        } catch (e) {
+            console.error(`Failed to parse config for ${file.name}`, e);
+            return null;
+        }
+    }));
+
+    // Filter out any failed fetches (nulls)
+    const validAccounts = accountsData.filter(a => a !== null);
+
+    return new Response(JSON.stringify({ ok: true, accounts: validAccounts }), { status: 200, headers });
+
+  } catch (error: any) {
+    console.error("List accounts error:", error);
+    return new Response(JSON.stringify({ ok: false, error: error.message }), { status: 500, headers });
   }
 }
