@@ -1,44 +1,51 @@
-// /api/save-config.ts
 export const config = {
   runtime: 'edge',
 };
 
 export default async function handler(request: Request) {
-  if (request.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
+  const headers = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+  };
+
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { ...headers, 'Access-Control-Allow-Methods': 'POST, OPTIONS' } });
   }
 
-  const token  = process.env.GITHUB_TOKEN;
-  const owner  = process.env.GITHUB_OWNER || 'pesquisacemporcento-droid';
-  const repo   = process.env.GITHUB_REPO  || 'config-grepolis-bot';
+  if (request.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers });
+  }
+
+  const token = process.env.GITHUB_TOKEN;
+  const owner = process.env.GITHUB_OWNER || 'pesquisacemporcento-droid';
+  const repo = process.env.GITHUB_REPO || 'config-grepolis-bot';
+  let path = process.env.GITHUB_PATH || 'config-grepolis-bot/config.json';
   const branch = process.env.GITHUB_BRANCH || 'main';
-  const baseDir = (process.env.GITHUB_PATH || 'config-grepolis-bot').replace(/\/$/, '');
 
   if (!token) {
-    return new Response(
-      JSON.stringify({ error: 'Server misconfiguration: Missing GITHUB_TOKEN' }),
-      { status: 500 },
-    );
+    return new Response(JSON.stringify({ error: 'Server misconfiguration: Missing GITHUB_TOKEN' }), { status: 500, headers });
   }
 
   try {
     const body = await request.json();
-    const { config: cfg, account } = body || {};
+    const { config, account } = body;
 
-    const accountKey = (account || '').trim();
-
-    if (!cfg) {
-      return new Response(JSON.stringify({ error: 'Missing config data' }), { status: 400 });
+    if (!config) {
+      return new Response(JSON.stringify({ error: 'Missing config data' }), { status: 400, headers });
     }
 
-    if (!accountKey) {
-      return new Response(JSON.stringify({ error: 'Missing account id' }), { status: 400 });
+    // Determine filename based on account
+    if (account) {
+      if (path.endsWith('.json')) {
+        path = path.replace('.json', `_${account}.json`);
+      } else {
+        path = `${path}/config_${account}.json`;
+      }
     }
 
-    const path = `${baseDir}/config_${accountKey}.json`;
-    const url  = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
 
-    // 1. Verifica se o arquivo já existe para pegar o SHA
+    // 1. Get current SHA to allow update (if file exists)
     const getResponse = await fetch(`${url}?ref=${branch}`, {
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -51,28 +58,28 @@ export default async function handler(request: Request) {
       const data = await getResponse.json();
       sha = data.sha;
     } else if (getResponse.status !== 404) {
-      // Se não for 404, é erro real
       throw new Error(`Error checking file existence: ${getResponse.status}`);
     }
 
-    // 2. Monta config com updated_at
+    // 2. Add server-side timestamp
     const configToSave = {
-      ...cfg,
-      updated_at: new Date().toISOString(),
+      ...config,
+      updated_at: new Date().toISOString()
     };
 
+    // 3. Encode content
     const contentString = JSON.stringify(configToSave, null, 2);
     const bytes = new TextEncoder().encode(contentString);
     const binString = Array.from(bytes, byte => String.fromCharCode(byte)).join("");
     const contentBase64 = btoa(binString);
 
-    // 3. PUT update/create
-    const putBody: any = {
-      message: `Update config for ${accountKey}`,
+    // 4. PUT update/create
+    const putBody = {
+      message: account ? `Update config for ${account}` : 'Update global config',
       content: contentBase64,
-      branch,
+      branch: branch,
+      ...(sha ? { sha } : {}),
     };
-    if (sha) putBody.sha = sha;
 
     const putResponse = await fetch(url, {
       method: 'PUT',
@@ -89,16 +96,10 @@ export default async function handler(request: Request) {
       throw new Error(errorData.message || `GitHub API error: ${putResponse.status}`);
     }
 
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers });
 
   } catch (error: any) {
     console.error("Save error:", error);
-    return new Response(
-      JSON.stringify({ success: false, error: error.message }),
-      { status: 500 },
-    );
+    return new Response(JSON.stringify({ success: false, error: error.message }), { status: 500, headers });
   }
 }

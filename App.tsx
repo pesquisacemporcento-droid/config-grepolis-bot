@@ -27,7 +27,9 @@ const App: React.FC = () => {
 
   // --- Logger Helper ---
   const pushLog = useCallback((msg: string) => {
-    const time = new Date().toLocaleTimeString('pt-BR');
+    // Format: [HH:MM] Mensagem
+    const now = new Date();
+    const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const line = `[${time}] ${msg}`;
     setLogs(prev => [line, ...prev].slice(0, 200));
   }, []);
@@ -36,7 +38,7 @@ const App: React.FC = () => {
   const showToast = useCallback((type: 'success' | 'error', text: string) => {
     setToastMessage({ type, text });
     setTimeout(() => setToastMessage(null), 4000);
-    // Also push to logs
+    // Log error toast automatically
     if (type === 'error') pushLog(`ERRO: ${text}`);
   }, [pushLog]);
 
@@ -69,7 +71,7 @@ const App: React.FC = () => {
     if (!acc.trim()) return;
     
     setLoadingConfig(true);
-    pushLog(`Carregando configuração para: ${acc}...`);
+    // Log only if it's a significant load (not just typing) - managed by useEffect debounce
     
     try {
       const res = await fetch(`/api/get-config?account=${encodeURIComponent(acc)}`);
@@ -85,10 +87,10 @@ const App: React.FC = () => {
         });
         
         if (data.isNew) {
-           pushLog(`Conta nova detectada. Usando padrão.`);
-           showToast('success', 'Nova conta. Configuração padrão carregada.');
+           pushLog(`Conta ${acc} – Config carregada (NOVA/DEFAULT)`);
+           showToast('success', `Conta nova: ${acc}`);
         } else {
-           pushLog(`Configuração carregada com sucesso.`);
+           pushLog(`Conta ${acc} – Config carregada`);
         }
       } else {
         throw new Error(data.error || 'Erro desconhecido');
@@ -134,8 +136,13 @@ const App: React.FC = () => {
   };
 
   const handleCreateNewAccount = (name: string) => {
+    pushLog(`Criando nova conta: ${name}`);
     setAccountKey(name); // This will trigger useEffect -> fetchConfig -> load Default
-    pushLog(`Iniciando criação de nova conta: ${name}`);
+  };
+
+  const handleReloadAccounts = () => {
+    fetchKnownAccounts();
+    pushLog('Lista de contas atualizada.');
   };
 
   // --- Validation ---
@@ -167,8 +174,6 @@ const App: React.FC = () => {
       return;
     }
 
-    pushLog(`Salvando alterações para ${accountKey}...`);
-
     try {
       const res = await fetch('/api/save-config', {
         method: 'POST',
@@ -183,7 +188,7 @@ const App: React.FC = () => {
       
       if (data.success) {
         showToast('success', 'Salvo com sucesso!');
-        pushLog('Configuração sincronizada com GitHub.');
+        pushLog(`Conta ${accountKey} – Config salva com sucesso`);
         // Update list
         fetchKnownAccounts();
       } else {
@@ -208,7 +213,7 @@ const App: React.FC = () => {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     setIsSaved(true);
-    pushLog('JSON baixado.');
+    pushLog('JSON baixado para o computador');
     setTimeout(() => setIsSaved(false), 3000);
   };
 
@@ -216,7 +221,7 @@ const App: React.FC = () => {
     if (hasErrors) return;
     navigator.clipboard.writeText(JSON.stringify(config, null, 2));
     setIsCopied(true);
-    pushLog('JSON copiado para área de transferência.');
+    pushLog('JSON copiado para a área de transferência');
     setTimeout(() => setIsCopied(false), 3000);
   };
 
@@ -308,7 +313,7 @@ const App: React.FC = () => {
                 isFetching={loadingConfig}
                 knownAccounts={knownAccounts}
                 onCreateNew={handleCreateNewAccount}
-                onReloadAccounts={fetchKnownAccounts}
+                onReloadAccounts={handleReloadAccounts}
               />
               
               <QuickView 
@@ -357,7 +362,7 @@ const App: React.FC = () => {
         {/* Footer */}
         <footer className="mt-20 py-8 text-center border-t border-zinc-800/50">
           <p className="text-xs text-zinc-600 font-medium">
-            Bot Grepolis – Painel de Controle Multi-Conta • v4.0
+            Bot Grepolis – Painel de Controle Multi-Conta • v4.5
           </p>
         </footer>
       </div>

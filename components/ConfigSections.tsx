@@ -16,7 +16,8 @@ import {
   RefreshCw,
   PlusCircle,
   Terminal,
-  List
+  List,
+  Wifi
 } from 'lucide-react';
 import { Card, Toggle, Input, Checkbox, StatusBadge } from './UI';
 import { RootConfig, KnownAccount } from '../types';
@@ -24,6 +25,19 @@ import { RootConfig, KnownAccount } from '../types';
 // Constants for styling
 const INNER_CARD_BG = 'bg-[#09090b]'; // Zinc 950
 const INNER_BORDER = 'border-[#27272a]'; // Zinc 800
+
+// --- Helper Functions ---
+const timeAgo = (dateStr: string | null) => {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diff = (now.getTime() - date.getTime()) / 1000; // seconds
+
+  if (diff < 60) return 'agora';
+  if (diff < 3600) return `há ${Math.floor(diff / 60)} min`;
+  if (diff < 86400) return `há ${Math.floor(diff / 3600)} h`;
+  return `há ${Math.floor(diff / 86400)} d`;
+};
 
 // --- Helper for Save Button ---
 interface SaveActionProps {
@@ -84,8 +98,8 @@ interface QuickViewProps {
 export const QuickView: React.FC<QuickViewProps> = ({ accounts, onSelect, currentAccount }) => {
   return (
     <Card icon={List} title="Contas Configuradas">
-      <div className="mb-3 text-xs text-zinc-500 font-medium px-1">
-        {accounts.length} conta(s) encontrada(s)
+      <div className="mb-3 text-xs text-zinc-500 font-medium px-1 flex justify-between items-center">
+        <span>{accounts.length} conta(s) encontrada(s)</span>
       </div>
       <div className="max-h-[220px] overflow-y-auto custom-scrollbar space-y-2 pr-1">
         {accounts.length === 0 ? (
@@ -97,31 +111,37 @@ export const QuickView: React.FC<QuickViewProps> = ({ accounts, onSelect, curren
               <button
                 key={acc.account}
                 onClick={() => onSelect(acc.account)}
-                className={`w-full text-left p-3 rounded-lg border transition-all duration-200 group
+                className={`w-full text-left p-3 rounded-lg border transition-all duration-200 group relative overflow-hidden
                   ${isActive 
                     ? 'bg-zinc-900 border-[#00ffae] shadow-[0_0_10px_-5px_#00ffae]' 
                     : 'bg-[#09090b] border-zinc-800 hover:border-zinc-600'
                   }
                 `}
               >
-                <div className="flex justify-between items-start mb-1">
-                  <span className={`text-sm font-semibold truncate ${isActive ? 'text-[#00ffae]' : 'text-zinc-300'}`}>
+                <div className="flex justify-between items-start mb-1.5">
+                  <span className={`text-sm font-semibold truncate max-w-[70%] ${isActive ? 'text-[#00ffae]' : 'text-zinc-300'}`}>
                     {acc.account}
                   </span>
-                  {acc.updatedAt && (
-                     <span className="text-[10px] text-zinc-600">
-                       {new Date(acc.updatedAt).toLocaleDateString('pt-BR')}
-                     </span>
-                  )}
+                  {/* Status Badge */}
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border flex items-center gap-1
+                     ${acc.online 
+                       ? 'bg-green-500/10 text-green-400 border-green-500/30' 
+                       : 'bg-zinc-800 text-zinc-500 border-zinc-700'}
+                  `}>
+                    {acc.online && <div className="w-1 h-1 rounded-full bg-green-500 animate-pulse" />}
+                    {acc.online ? 'ONLINE' : 'OFFLINE'}
+                  </span>
                 </div>
-                <div className="flex items-center gap-2 text-[10px] font-mono text-zinc-500">
-                  <span className={acc.enabled ? 'text-green-500' : 'text-red-500'}>
-                    BOT: {acc.enabled ? 'ON' : 'OFF'}
-                  </span>
-                  <span>•</span>
-                  <span className={acc.farmEnabled ? 'text-green-500' : 'text-zinc-600'}>
-                    Farm: {acc.intervalMin ?? '?'}–{acc.intervalMax ?? '?'}s
-                  </span>
+                
+                <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500">
+                  <div className="flex items-center gap-2">
+                    <span className={acc.farmEnabled ? 'text-green-500/80' : 'text-zinc-600'}>
+                      Farm: {acc.intervalMin ?? '?'}–{acc.intervalMax ?? '?'}s
+                    </span>
+                  </div>
+                  {acc.updatedAt && (
+                     <span>{timeAgo(acc.updatedAt)}</span>
+                  )}
                 </div>
               </button>
             );
@@ -151,30 +171,25 @@ export const AccountSection: React.FC<AccountSectionProps> = ({
   onReloadAccounts
 }) => {
   const [newAccountName, setNewAccountName] = useState('');
-
-  const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    if (e.target.value) {
-      setAccountKey(e.target.value);
-    }
-  };
+  const [isCreating, setIsCreating] = useState(false);
 
   const handleCreate = () => {
-    const nameToCreate = newAccountName || accountKey;
-    if (nameToCreate) {
-      onCreateNew(nameToCreate);
+    if (newAccountName) {
+      onCreateNew(newAccountName);
       setNewAccountName('');
+      setIsCreating(false);
     }
   };
 
   return (
-    <div className="flex flex-col gap-5 mb-2">
+    <div className="flex flex-col gap-4 mb-2">
       <div className="flex items-center justify-between">
         <h2 className="text-xs uppercase font-bold text-zinc-500 tracking-wider flex items-center gap-2">
           <User className="w-3 h-3" /> Conta Atual
         </h2>
         <button 
           onClick={onReloadAccounts}
-          className="text-[10px] flex items-center gap-1 text-[#00ffae] hover:underline"
+          className="text-[10px] flex items-center gap-1 text-[#00ffae] hover:underline bg-zinc-900/50 px-2 py-1 rounded border border-zinc-800 hover:border-zinc-700 transition-colors"
           title="Recarregar lista de contas"
         >
           <RefreshCw className="w-3 h-3" /> Atualizar lista
@@ -182,33 +197,12 @@ export const AccountSection: React.FC<AccountSectionProps> = ({
       </div>
 
       <div className="space-y-4">
-        {/* Dropdown for existing */}
-        {knownAccounts.length > 0 && (
-          <div className="relative">
-             <select 
-               value={knownAccounts.find(k => k.account === accountKey) ? accountKey : ''} 
-               onChange={handleSelectChange}
-               className="w-full bg-[#09090b] border border-zinc-700 rounded-lg px-4 py-2.5 text-sm text-zinc-300 focus:outline-none focus:border-[#00ffae] appearance-none cursor-pointer"
-             >
-               <option value="" disabled>Selecione uma conta existente...</option>
-               {knownAccounts.map(acc => (
-                 <option key={acc.account} value={acc.account}>
-                   {acc.account}
-                 </option>
-               ))}
-             </select>
-             <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500">
-               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-             </div>
-          </div>
-        )}
-
         {/* Manual Input - Essential for Tampermonkey */}
         <div className="relative group">
           <Input 
             id="account" 
-            label="ID da Conta (Input Manual / Extensão)"
-            placeholder="ex: br14_ANDE LUZ E MARIA"
+            label="ID da Conta (Auto-detectado ou Manual)"
+            placeholder="mundo_nick, ex: br14_ANDE LUZ E MARIA"
             value={accountKey}
             onChange={(e) => setAccountKey(e.target.value)}
             className="font-mono text-[#00ffae] pr-10"
@@ -218,26 +212,40 @@ export const AccountSection: React.FC<AccountSectionProps> = ({
           </div>
         </div>
 
-        {/* Create New Area */}
-        <div className="pt-2 border-t border-zinc-800/50">
-          <label className="text-[10px] uppercase text-zinc-500 font-bold mb-2 block">Criar / Usar Nova Conta</label>
-          <div className="flex gap-2">
-             <input 
-               type="text"
-               placeholder="Novo mundo_nick"
-               value={newAccountName}
-               onChange={(e) => setNewAccountName(e.target.value)}
-               className="flex-1 bg-[#09090b] border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-300 focus:border-[#00ffae] focus:outline-none placeholder-zinc-700"
-             />
-             <button 
-                onClick={handleCreate}
-                disabled={!newAccountName && !accountKey}
-                className="bg-zinc-800 hover:bg-[#00ffae]/10 hover:text-[#00ffae] hover:border-[#00ffae] border border-zinc-700 text-zinc-300 rounded-lg px-3 flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-             >
-                <PlusCircle className="w-4 h-4" />
-             </button>
+        {/* Create New Area - Toggleable */}
+        {!isCreating ? (
+          <button 
+            onClick={() => setIsCreating(true)}
+            className="w-full py-2 text-xs font-medium text-zinc-500 border border-dashed border-zinc-800 rounded-lg hover:text-[#00ffae] hover:border-[#00ffae]/30 transition-all flex items-center justify-center gap-2"
+          >
+            <PlusCircle className="w-3 h-3" />
+            Configurar nova conta
+          </button>
+        ) : (
+          <div className="bg-[#09090b] border border-zinc-800 rounded-lg p-3 animate-fade-in-down">
+             <label className="text-[10px] uppercase text-zinc-500 font-bold mb-2 block">Nome da nova conta</label>
+             <div className="flex gap-2">
+               <input 
+                 type="text"
+                 placeholder="Ex: br15_NovoNick"
+                 value={newAccountName}
+                 onChange={(e) => setNewAccountName(e.target.value)}
+                 className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-300 focus:border-[#00ffae] focus:outline-none placeholder-zinc-700 font-mono"
+                 autoFocus
+               />
+               <button 
+                  onClick={handleCreate}
+                  disabled={!newAccountName}
+                  className="bg-[#00ffae]/10 text-[#00ffae] border border-[#00ffae]/30 hover:bg-[#00ffae] hover:text-black rounded-lg px-3 flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+               >
+                  Criar
+               </button>
+               <button onClick={() => setIsCreating(false)} className="text-zinc-500 hover:text-white px-2">
+                 ✕
+               </button>
+             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

@@ -39,6 +39,8 @@ export interface KnownAccount {
   intervalMin: number | null;
   intervalMax: number | null;
   updatedAt: string | null;
+  online?: boolean;     // New: status from heartbeat
+  lastSeen?: string | null; // New: last heartbeat timestamp
 }
 
 export const DEFAULT_CONFIG: RootConfig = {
