@@ -3,7 +3,7 @@ import { Octokit } from '@octokit/rest';
 
 const repoOwner = process.env.GITHUB_OWNER;
 const repoName  = process.env.GITHUB_REPO;
-const filePath  = process.env.GITHUB_PATH; // ex: 'config-grepolis-bot'
+const filePath  = process.env.GITHUB_PATH;
 const token     = process.env.GITHUB_TOKEN;
 
 const octokit = new Octokit({
@@ -14,13 +14,13 @@ type OnlineStore = {
   [account: string]: {
     [clientId: string]: {
       last_seen: string; // ISO
-    }
-  }
+    };
+  };
 };
 
 const ONLINE_FILE = (filePath ? filePath.replace(/\/$/, '') + '/' : '') + 'online-accounts.json';
 
-// Lê o arquivo online-accounts.json do GitHub (ou retorna objeto vazio)
+// Lê o arquivo online-accounts.json ou retorna objeto vazio
 async function loadOnlineStore(): Promise<{ store: OnlineStore; sha: string | null }> {
   try {
     const getFile = await octokit.repos.getContent({
@@ -39,7 +39,7 @@ async function loadOnlineStore(): Promise<{ store: OnlineStore; sha: string | nu
 
     return { store, sha: (getFile.data as any).sha || null };
   } catch (err: any) {
-    // Se 404, ainda não existe
+    // Se 404, arquivo ainda não existe
     if (err?.status === 404) {
       return { store: {}, sha: null };
     }
@@ -65,19 +65,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const nowIso = new Date().toISOString();
 
-    // Carrega store atual
     const { store, sha } = await loadOnlineStore();
 
     if (!store[account]) {
       store[account] = {};
     }
-    if (!store[account][clientId]) {
-      store[account][clientId] = { last_seen: nowIso };
-    } else {
-      store[account][clientId].last_seen = nowIso;
-    }
+    store[account][clientId] = { last_seen: nowIso };
 
-    // Salva no GitHub
     const newContent = Buffer.from(JSON.stringify(store, null, 2), 'utf8').toString('base64');
 
     await octokit.repos.createOrUpdateFileContents({
