@@ -80,7 +80,6 @@ export default async function handler(request: Request) {
     const files = await response.json();
 
     if (!Array.isArray(files)) {
-        // GitHub might return an object for errors or single files. Treat as empty list to avoid crash.
         return new Response(JSON.stringify({ ok: true, accounts: [] }), { status: 200, headers });
     }
 
@@ -92,13 +91,11 @@ export default async function handler(request: Request) {
     const validAccounts: any[] = [];
 
     // 3. Batched Concurrent Fetch
-    // REDUCED BATCH SIZE to 4 to fix "ReadableStreamDefaultController" errors on Edge
     const BATCH_SIZE = 4;
     
     for (let i = 0; i < accountFiles.length; i += BATCH_SIZE) {
         const batch = accountFiles.slice(i, i + BATCH_SIZE);
         
-        // Add small delay between batches to respect Rate Limits and let Edge runtime breathe
         if (i > 0) await delay(100);
 
         await Promise.all(batch.map(async (file: any) => {
@@ -120,11 +117,21 @@ export default async function handler(request: Request) {
                 const decodedContent = safeDecode(fileData.content);
                 if (!decodedContent) return;
                 
-                // CRITICAL: Safe JSON Parse to prevent "Unexpected non-whitespace character after JSON at position 4"
+                // CRITICAL FIX: Robust JSON extraction
+                // This prevents "Unexpected non-whitespace character after JSON at position 4"
+                // by finding the first '{' and the last '}' and ignoring everything else.
+                const firstBrace = decodedContent.indexOf('{');
+                const lastBrace = decodedContent.lastIndexOf('}');
+                
+                if (firstBrace === -1 || lastBrace === -1 || lastBrace < firstBrace) {
+                    return; // Not a valid JSON object
+                }
+
+                const cleanJsonString = decodedContent.substring(firstBrace, lastBrace + 1);
+
                 let json: ConfigFile;
                 try {
-                    // Trimming prevents issues with trailing junk
-                    json = JSON.parse(decodedContent.trim());
+                    json = JSON.parse(cleanJsonString);
                 } catch (jsonErr) {
                     console.error(`Invalid JSON in ${file.name}`);
                     return;

@@ -90,7 +90,7 @@ export const LogsSection: React.FC<LogsSectionProps> = ({ logs }) => {
   );
 };
 
-// --- Quick View Section ---
+// --- Quick View Section (Updated Layout) ---
 interface QuickViewProps {
   accounts: KnownAccount[];
   onSelect: (account: string) => void;
@@ -99,15 +99,16 @@ interface QuickViewProps {
 
 export const QuickView: React.FC<QuickViewProps> = ({ accounts, onSelect, currentAccount }) => {
   return (
-    <Card icon={List} title="Contas Configuradas">
+    <div className="w-full bg-[#18181b] border border-[#27272a] rounded-xl p-5 h-auto overflow-visible shadow-xl">
+      <div className="flex items-center gap-3 mb-4">
+        <List className="w-5 h-5 text-zinc-400" />
+        <h2 className="text-base font-semibold text-zinc-100 tracking-tight">Contas Configuradas</h2>
+      </div>
+
       <div className="mb-4 text-xs text-zinc-500 font-medium px-1 flex justify-between items-center">
         <span>{accounts.length} conta(s) encontrada(s)</span>
       </div>
-      {/* 
-         Removed "space-y-2 pr-1" to ensure no scrollbar constraints.
-         Removed any max-height or overflow logic.
-         The container will grow naturally.
-      */}
+
       <div className="flex flex-col gap-3">
         {accounts.length === 0 ? (
           <div className="text-zinc-600 text-sm italic text-center py-6 border border-dashed border-zinc-800 rounded-lg">
@@ -120,7 +121,7 @@ export const QuickView: React.FC<QuickViewProps> = ({ accounts, onSelect, curren
               <button
                 key={acc.account}
                 onClick={() => onSelect(acc.account)}
-                className={`w-full text-left p-4 rounded-xl border transition-all duration-200 group relative overflow-hidden
+                className={`w-full text-left p-4 rounded-xl border transition-all duration-200 group relative
                   ${isActive 
                     ? 'bg-zinc-900 border-[#00ffae] shadow-[0_0_15px_-10px_#00ffae] translate-x-1' 
                     : 'bg-[#09090b] border-zinc-800 hover:border-zinc-600 hover:translate-x-1'
@@ -161,7 +162,7 @@ export const QuickView: React.FC<QuickViewProps> = ({ accounts, onSelect, curren
           })
         )}
       </div>
-    </Card>
+    </div>
   );
 };
 
