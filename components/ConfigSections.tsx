@@ -100,12 +100,19 @@ interface QuickViewProps {
 export const QuickView: React.FC<QuickViewProps> = ({ accounts, onSelect, currentAccount }) => {
   return (
     <Card icon={List} title="Contas Configuradas">
-      <div className="mb-3 text-xs text-zinc-500 font-medium px-1 flex justify-between items-center">
+      <div className="mb-4 text-xs text-zinc-500 font-medium px-1 flex justify-between items-center">
         <span>{accounts.length} conta(s) encontrada(s)</span>
       </div>
-      <div className="space-y-2 pr-1">
+      {/* 
+         Removed "space-y-2 pr-1" to ensure no scrollbar constraints.
+         Removed any max-height or overflow logic.
+         The container will grow naturally.
+      */}
+      <div className="flex flex-col gap-3">
         {accounts.length === 0 ? (
-          <div className="text-zinc-600 text-sm italic text-center py-4">Nenhuma conta salva.</div>
+          <div className="text-zinc-600 text-sm italic text-center py-6 border border-dashed border-zinc-800 rounded-lg">
+            Nenhuma conta encontrada.
+          </div>
         ) : (
           accounts.map((acc) => {
             const isActive = acc.account === currentAccount;
@@ -113,40 +120,40 @@ export const QuickView: React.FC<QuickViewProps> = ({ accounts, onSelect, curren
               <button
                 key={acc.account}
                 onClick={() => onSelect(acc.account)}
-                className={`w-full text-left p-3 rounded-lg border transition-all duration-200 group relative overflow-hidden
+                className={`w-full text-left p-4 rounded-xl border transition-all duration-200 group relative overflow-hidden
                   ${isActive 
-                    ? 'bg-zinc-900 border-[#00ffae] shadow-[0_0_10px_-5px_#00ffae]' 
-                    : 'bg-[#09090b] border-zinc-800 hover:border-zinc-600'
+                    ? 'bg-zinc-900 border-[#00ffae] shadow-[0_0_15px_-10px_#00ffae] translate-x-1' 
+                    : 'bg-[#09090b] border-zinc-800 hover:border-zinc-600 hover:translate-x-1'
                   }
                 `}
               >
-                <div className="flex justify-between items-start mb-1.5">
-                  <span className={`text-sm font-semibold truncate max-w-[70%] ${isActive ? 'text-[#00ffae]' : 'text-zinc-300'}`}>
+                <div className="flex justify-between items-start mb-2">
+                  <span className={`text-sm font-bold truncate max-w-[70%] ${isActive ? 'text-[#00ffae]' : 'text-zinc-200 group-hover:text-white'}`}>
                     {acc.account}
                   </span>
                   {/* Status Badge */}
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border flex items-center gap-1
+                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded border flex items-center gap-1.5
                      ${acc.online 
                        ? 'bg-green-500/10 text-green-400 border-green-500/30' 
-                       : 'bg-zinc-800 text-zinc-500 border-zinc-700'}
+                       : 'bg-zinc-800/50 text-zinc-600 border-zinc-800'}
                   `}>
-                    {acc.online && <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />}
+                    <div className={`w-1.5 h-1.5 rounded-full ${acc.online ? 'bg-green-500 animate-pulse' : 'bg-zinc-600'}`} />
                     {acc.online ? 'ONLINE' : 'OFFLINE'}
                   </span>
                 </div>
                 
-                <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500">
+                <div className="flex items-center justify-between text-[11px] font-mono text-zinc-500">
                   <div className="flex items-center gap-2">
                     {acc.intervalMin && acc.intervalMax ? (
-                        <span className={acc.farmEnabled ? 'text-green-500/80' : 'text-zinc-600'}>
-                        {acc.intervalMin}–{acc.intervalMax}s
+                        <span className={acc.farmEnabled ? 'text-green-500/70' : 'text-zinc-600'}>
+                        ⏱ {acc.intervalMin}s - {acc.intervalMax}s
                         </span>
                     ) : (
                         <span className="text-zinc-700">--</span>
                     )}
                   </div>
                   {acc.updatedAt && (
-                     <span>{formatDate(acc.updatedAt)}</span>
+                     <span className="opacity-60">{formatDate(acc.updatedAt)}</span>
                   )}
                 </div>
               </button>

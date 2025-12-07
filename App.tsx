@@ -31,7 +31,7 @@ const App: React.FC = () => {
     const now = new Date();
     const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const line = `[${time}] ${msg}`;
-    setLogs(prev => [line, ...prev].slice(0, 200));
+    setLogs(prev => [line, ...prev].slice(200));
   }, []);
 
   // --- Toast Helper ---
@@ -306,7 +306,7 @@ const App: React.FC = () => {
           
           {/* Left Column (Accounts & Status) */}
           <div className="lg:col-span-4 space-y-8 h-fit">
-            <div className="lg:sticky lg:top-8 space-y-8">
+            <div className="space-y-8">
               <AccountSection 
                 accountKey={accountKey}
                 setAccountKey={setAccountKey}

@@ -1,6 +1,4 @@
 // Remove external import to ensure Edge function isolation stability
-// import { RootConfig } from '../types';
-
 export const config = {
   runtime: 'edge',
 };
@@ -16,24 +14,31 @@ interface ConfigFile {
   updated_at?: string;
 }
 
-// Robust Base64 decode for Edge environment
+// Robust Base64 decode for Edge environment with fallback
 function safeDecode(base64: string): string {
+  if (!base64) return "";
   try {
     const raw = atob(base64.replace(/[\n\r]/g, ''));
     const bytes = Uint8Array.from(raw, c => c.charCodeAt(0));
     return new TextDecoder().decode(bytes);
   } catch (e) {
-    console.warn("Base64 decode failed", e);
-    return "";
+    try {
+        return atob(base64.replace(/[\n\r]/g, ''));
+    } catch (e2) {
+        return "";
+    }
   }
 }
 
+// Helper for delays
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export default async function handler(request: Request) {
-  // Common headers for JSON response + CORS
+  // Common headers
   const headers = {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': '*',
-    'Cache-Control': 'no-store, max-age=0', // Prevent caching
+    'Cache-Control': 'no-store, max-age=0',
   };
 
   if (request.method === 'OPTIONS') {
@@ -75,6 +80,7 @@ export default async function handler(request: Request) {
     const files = await response.json();
 
     if (!Array.isArray(files)) {
+        // GitHub might return an object for errors or single files. Treat as empty list to avoid crash.
         return new Response(JSON.stringify({ ok: true, accounts: [] }), { status: 200, headers });
     }
 
@@ -83,52 +89,70 @@ export default async function handler(request: Request) {
         f.name && f.name.startsWith('config_') && f.name.endsWith('.json')
     );
 
-    const validAccounts = [];
+    const validAccounts: any[] = [];
 
-    // 3. Sequential Fetch to prevent Rate Limiting / Edge Resource Exhaustion
-    // (Promise.all can cause "ReadableStreamDefaultController" errors if too many requests fire at once in strict envs)
-    for (const file of accountFiles) {
-        try {
-            const accountName = file.name.replace(/^config_/, '').replace(/\.json$/, '');
-            
-            const contentRes = await fetch(file.url, {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Accept': 'application/vnd.github.v3+json',
-                },
-            });
-            
-            if (!contentRes.ok) continue;
+    // 3. Batched Concurrent Fetch
+    // REDUCED BATCH SIZE to 4 to fix "ReadableStreamDefaultController" errors on Edge
+    const BATCH_SIZE = 4;
+    
+    for (let i = 0; i < accountFiles.length; i += BATCH_SIZE) {
+        const batch = accountFiles.slice(i, i + BATCH_SIZE);
+        
+        // Add small delay between batches to respect Rate Limits and let Edge runtime breathe
+        if (i > 0) await delay(100);
 
-            const fileData = await contentRes.json();
-            if (!fileData.content) continue;
-            
-            const decodedContent = safeDecode(fileData.content);
-            if (!decodedContent) continue;
-            
-            const json = JSON.parse(decodedContent) as ConfigFile;
+        await Promise.all(batch.map(async (file: any) => {
+            try {
+                const accountName = file.name.replace(/^config_/, '').replace(/\.json$/, '');
+                
+                const contentRes = await fetch(file.url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/vnd.github.v3+json',
+                    },
+                });
+                
+                if (!contentRes.ok) return;
 
-            validAccounts.push({
-                account: accountName,
-                enabled: json.enabled ?? false,
-                farmEnabled: json.farm?.enabled ?? false,
-                intervalMin: json.farm?.interval_min ?? null,
-                intervalMax: json.farm?.interval_max ?? null,
-                updatedAt: json.updated_at ?? null,
-                online: false, 
-                lastSeen: null 
-            });
-        } catch (e) {
-            console.error(`Error processing ${file.name}`, e);
-            // Continue to next file on error
-        }
+                const fileData = await contentRes.json();
+                if (!fileData.content) return;
+                
+                const decodedContent = safeDecode(fileData.content);
+                if (!decodedContent) return;
+                
+                // CRITICAL: Safe JSON Parse to prevent "Unexpected non-whitespace character after JSON at position 4"
+                let json: ConfigFile;
+                try {
+                    // Trimming prevents issues with trailing junk
+                    json = JSON.parse(decodedContent.trim());
+                } catch (jsonErr) {
+                    console.error(`Invalid JSON in ${file.name}`);
+                    return;
+                }
+
+                validAccounts.push({
+                    account: accountName,
+                    enabled: json.enabled ?? false,
+                    farmEnabled: json.farm?.enabled ?? false,
+                    intervalMin: json.farm?.interval_min ?? null,
+                    intervalMax: json.farm?.interval_max ?? null,
+                    updatedAt: json.updated_at ?? null,
+                    online: false, 
+                    lastSeen: null 
+                });
+            } catch (e) {
+                // Silently fail for individual files to keep the list alive
+            }
+        }));
     }
+
+    // Sort alphabetically by account name
+    validAccounts.sort((a, b) => a.account.localeCompare(b.account));
 
     return new Response(JSON.stringify({ ok: true, accounts: validAccounts }), { status: 200, headers });
 
   } catch (error: any) {
     console.error("List accounts fatal error:", error);
-    // Return a clean 500 JSON
     return new Response(JSON.stringify({ ok: false, error: error.message || 'Internal Error' }), { status: 500, headers });
   }
 }
