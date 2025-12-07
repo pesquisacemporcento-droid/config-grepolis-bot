@@ -1,169 +1,134 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { Octokit } from '@octokit/rest';
+// Remove external import to ensure Edge function isolation stability
+// import { RootConfig } from '../types';
 
-const repoOwner = process.env.GITHUB_OWNER;
-const repoName  = process.env.GITHUB_REPO;
-const filePath  = process.env.GITHUB_PATH;
-const token     = process.env.GITHUB_TOKEN;
-
-const octokit = new Octokit({
-  auth: token,
-});
-
-type FarmConfig = {
-  enabled: boolean;
-  interval_min: number;
-  interval_max: number;
-  shuffle_cities: boolean;
+export const config = {
+  runtime: 'edge',
 };
 
-type MarketConfig = {
-  enabled: boolean;
-  target_town_id: string;
-  send_wood: boolean;
-  send_stone: boolean;
-  send_silver: boolean;
-  max_storage_percent: number;
-  max_send_per_trip: number;
-  check_interval: number;
-  delay_between_trips: number;
-  split_equally: boolean;
-};
-
-type RootConfig = {
-  enabled: boolean;
-  farm_level: string;
-  farm: FarmConfig;
-  market: MarketConfig;
-  updated_at?: string;
-};
-
-type OnlineStore = {
-  [account: string]: {
-    [clientId: string]: {
-      last_seen: string;
-    };
+// Define minimal interface locally
+interface ConfigFile {
+  enabled?: boolean;
+  farm?: {
+    enabled: boolean;
+    interval_min: number;
+    interval_max: number;
   };
-};
+  updated_at?: string;
+}
 
-// pasta base dos configs, ex: "config-grepolis-bot"
-const BASE_DIR = (filePath || '').replace(/\/$/, '');
-const ONLINE_FILE = (filePath ? filePath.replace(/\/$/, '') + '/' : '') + 'online-accounts.json';
-
-async function loadOnlineStore(): Promise<OnlineStore> {
-  if (!repoOwner || !repoName || !filePath || !token) return {};
-
+// Robust Base64 decode for Edge environment
+function safeDecode(base64: string): string {
   try {
-    const res = await octokit.repos.getContent({
-      owner: repoOwner,
-      repo: repoName,
-      path: ONLINE_FILE,
-    });
-
-    if (!('content' in res.data)) return {};
-    const buff = Buffer.from(res.data.content, 'base64');
-    const json = buff.toString('utf8') || '{}';
-    return JSON.parse(json) as OnlineStore;
-  } catch (err: any) {
-    if (err?.status === 404) return {};
-    throw err;
+    const raw = atob(base64.replace(/[\n\r]/g, ''));
+    const bytes = Uint8Array.from(raw, c => c.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch (e) {
+    console.warn("Base64 decode failed", e);
+    return "";
   }
 }
 
-// Lê um arquivo config_<conta>.json e devolve o RootConfig
-async function loadAccountConfig(path: string): Promise<RootConfig | null> {
-  try {
-    const res = await octokit.repos.getContent({
-      owner: repoOwner!,
-      repo: repoName!,
-      path,
-    });
+export default async function handler(request: Request) {
+  // Common headers for JSON response + CORS
+  const headers = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    'Cache-Control': 'no-store, max-age=0', // Prevent caching
+  };
 
-    if (!('content' in res.data)) return null;
-    const buff = Buffer.from(res.data.content, 'base64');
-    const json = buff.toString('utf8') || '{}';
-    return JSON.parse(json) as RootConfig;
-  } catch (err: any) {
-    if (err?.status === 404) return null;
-    throw err;
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { ...headers, 'Access-Control-Allow-Methods': 'GET, OPTIONS' } });
   }
-}
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (request.method !== 'GET') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers });
+  }
+
+  const token = process.env.GITHUB_TOKEN;
+  const owner = process.env.GITHUB_OWNER || 'pesquisacemporcento-droid';
+  const repo = process.env.GITHUB_REPO || 'config-grepolis-bot';
+  const path = process.env.GITHUB_PATH || 'config-grepolis-bot';
+  const branch = process.env.GITHUB_BRANCH || 'main';
+
+  if (!token) {
+    return new Response(JSON.stringify({ error: 'Server misconfiguration: Missing GITHUB_TOKEN' }), { status: 500, headers });
+  }
+
   try {
-    if (!repoOwner || !repoName || !filePath || !token) {
-      return res.status(500).json({ ok: false, error: 'Missing GitHub env vars' });
-    }
-
-    if (!BASE_DIR) {
-      return res.status(500).json({ ok: false, error: 'Missing GITHUB_PATH base dir' });
-    }
-
-    // 1) lista todos os arquivos na pasta config-grepolis-bot/
-    const listing = await octokit.repos.getContent({
-      owner: repoOwner,
-      repo: repoName,
-      path: BASE_DIR,
+    // 1. List files in the directory
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
+    
+    const response = await fetch(apiUrl, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+      },
     });
 
-    if (!Array.isArray(listing.data)) {
-      return res.status(200).json({ ok: true, accounts: [] });
-    }
-
-    // 2) carrega mapa de online-accounts
-    const online = await loadOnlineStore();
-
-    const ONLINE_WINDOW_MS = 120_000; // 2 min
-    const now = Date.now();
-
-    const accountsResult: any[] = [];
-
-    for (const item of listing.data) {
-      if (item.type !== 'file') continue;
-      if (!item.name.endsWith('.json')) continue;
-      if (!item.name.startsWith('config_')) continue;
-      if (item.name === 'config-grepolis-bot.json') continue; // segurança
-
-      // nome do arquivo: config_<account>.json
-      const withoutPrefix = item.name.slice('config_'.length); // "<account>.json"
-      const account = withoutPrefix.replace(/\.json$/i, '');   // "<account>"
-
-      const cfg = await loadAccountConfig(item.path);
-      if (!cfg) continue;
-
-      // calcula se está online a partir do online-accounts.json
-      let lastSeen: string | null = null;
-      let isOnline = false;
-
-      const info = online[account] || {};
-      for (const clientId of Object.keys(info)) {
-        const tsStr = info[clientId].last_seen;
-        const ts = new Date(tsStr).getTime();
-        if (!Number.isNaN(ts)) {
-          if (!lastSeen || ts > new Date(lastSeen).getTime()) {
-            lastSeen = tsStr;
-          }
-          if (now - ts <= ONLINE_WINDOW_MS) {
-            isOnline = true;
-          }
+    if (!response.ok) {
+        if (response.status === 404) {
+             return new Response(JSON.stringify({ ok: true, accounts: [] }), { status: 200, headers });
         }
-      }
-
-      accountsResult.push({
-        account,
-        enabled: !!cfg.enabled,
-        farmEnabled: !!cfg.farm?.enabled,
-        intervalMin: cfg.farm?.interval_min ?? null,
-        intervalMax: cfg.farm?.interval_max ?? null,
-        updatedAt: cfg.updated_at || null,
-        online: isOnline,
-        lastSeen,
-      });
+        throw new Error(`GitHub API responded with ${response.status}`);
     }
 
-    return res.status(200).json({ ok: true, accounts: accountsResult });
-  } catch (err: any) {
-    console.error('list-accounts error:', err);
-    return res.status(500).json({ ok: false, error: err.message || 'Failed to list accounts' });
+    const files = await response.json();
+
+    if (!Array.isArray(files)) {
+        return new Response(JSON.stringify({ ok: true, accounts: [] }), { status: 200, headers });
+    }
+
+    // 2. Filter for config_*.json files
+    const accountFiles = files.filter((f: any) => 
+        f.name && f.name.startsWith('config_') && f.name.endsWith('.json')
+    );
+
+    const validAccounts = [];
+
+    // 3. Sequential Fetch to prevent Rate Limiting / Edge Resource Exhaustion
+    // (Promise.all can cause "ReadableStreamDefaultController" errors if too many requests fire at once in strict envs)
+    for (const file of accountFiles) {
+        try {
+            const accountName = file.name.replace(/^config_/, '').replace(/\.json$/, '');
+            
+            const contentRes = await fetch(file.url, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                },
+            });
+            
+            if (!contentRes.ok) continue;
+
+            const fileData = await contentRes.json();
+            if (!fileData.content) continue;
+            
+            const decodedContent = safeDecode(fileData.content);
+            if (!decodedContent) continue;
+            
+            const json = JSON.parse(decodedContent) as ConfigFile;
+
+            validAccounts.push({
+                account: accountName,
+                enabled: json.enabled ?? false,
+                farmEnabled: json.farm?.enabled ?? false,
+                intervalMin: json.farm?.interval_min ?? null,
+                intervalMax: json.farm?.interval_max ?? null,
+                updatedAt: json.updated_at ?? null,
+                online: false, 
+                lastSeen: null 
+            });
+        } catch (e) {
+            console.error(`Error processing ${file.name}`, e);
+            // Continue to next file on error
+        }
+    }
+
+    return new Response(JSON.stringify({ ok: true, accounts: validAccounts }), { status: 200, headers });
+
+  } catch (error: any) {
+    console.error("List accounts fatal error:", error);
+    // Return a clean 500 JSON
+    return new Response(JSON.stringify({ ok: false, error: error.message || 'Internal Error' }), { status: 500, headers });
   }
 }

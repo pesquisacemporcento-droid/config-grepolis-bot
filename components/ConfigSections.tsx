@@ -103,7 +103,7 @@ export const QuickView: React.FC<QuickViewProps> = ({ accounts, onSelect, curren
       <div className="mb-3 text-xs text-zinc-500 font-medium px-1 flex justify-between items-center">
         <span>{accounts.length} conta(s) encontrada(s)</span>
       </div>
-      <div className="max-h-[600px] overflow-y-auto custom-scrollbar space-y-2 pr-1">
+      <div className="space-y-2 pr-1">
         {accounts.length === 0 ? (
           <div className="text-zinc-600 text-sm italic text-center py-4">Nenhuma conta salva.</div>
         ) : (
