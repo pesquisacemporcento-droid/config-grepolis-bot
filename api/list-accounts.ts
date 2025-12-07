@@ -166,4 +166,4 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error('list-accounts error:', err);
     return res.status(500).json({ ok: false, error: err.message || 'Failed to list accounts' });
   }
-}a
+}
