@@ -29,12 +29,16 @@ const INNER_BORDER = 'border-[#27272a]'; // Zinc 800
 // --- Helper Functions ---
 const formatDate = (dateStr: string | null) => {
   if (!dateStr) return '';
-  return new Date(dateStr).toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+  try {
+    return new Date(dateStr).toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch (e) {
+    return '';
+  }
 };
 
 // --- Helper for Save Button ---
@@ -99,7 +103,7 @@ export const QuickView: React.FC<QuickViewProps> = ({ accounts, onSelect, curren
       <div className="mb-3 text-xs text-zinc-500 font-medium px-1 flex justify-between items-center">
         <span>{accounts.length} conta(s) encontrada(s)</span>
       </div>
-      <div className="max-h-[220px] overflow-y-auto custom-scrollbar space-y-2 pr-1">
+      <div className="max-h-[600px] overflow-y-auto custom-scrollbar space-y-2 pr-1">
         {accounts.length === 0 ? (
           <div className="text-zinc-600 text-sm italic text-center py-4">Nenhuma conta salva.</div>
         ) : (
@@ -126,16 +130,20 @@ export const QuickView: React.FC<QuickViewProps> = ({ accounts, onSelect, curren
                        ? 'bg-green-500/10 text-green-400 border-green-500/30' 
                        : 'bg-zinc-800 text-zinc-500 border-zinc-700'}
                   `}>
-                    {acc.online && <div className="w-1 h-1 rounded-full bg-green-500 animate-pulse" />}
+                    {acc.online && <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />}
                     {acc.online ? 'ONLINE' : 'OFFLINE'}
                   </span>
                 </div>
                 
                 <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500">
                   <div className="flex items-center gap-2">
-                    <span className={acc.farmEnabled ? 'text-green-500/80' : 'text-zinc-600'}>
-                      {acc.intervalMin ?? '?'}–{acc.intervalMax ?? '?'}s
-                    </span>
+                    {acc.intervalMin && acc.intervalMax ? (
+                        <span className={acc.farmEnabled ? 'text-green-500/80' : 'text-zinc-600'}>
+                        {acc.intervalMin}–{acc.intervalMax}s
+                        </span>
+                    ) : (
+                        <span className="text-zinc-700">--</span>
+                    )}
                   </div>
                   {acc.updatedAt && (
                      <span>{formatDate(acc.updatedAt)}</span>

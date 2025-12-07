@@ -16,12 +16,24 @@ interface ConfigFile {
   updated_at?: string;
 }
 
+// Robust Base64 decode for Edge environment
+function safeDecode(base64: string): string {
+  try {
+    const raw = atob(base64.replace(/[\n\r]/g, ''));
+    const bytes = Uint8Array.from(raw, c => c.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch (e) {
+    console.warn("Base64 decode failed", e);
+    return "";
+  }
+}
+
 export default async function handler(request: Request) {
   // Common headers for JSON response + CORS
   const headers = {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': '*',
-    'Cache-Control': 'no-store, max-age=0', // Prevent caching of the account list
+    'Cache-Control': 'no-store, max-age=0', // Prevent caching
   };
 
   if (request.method === 'OPTIONS') {
@@ -55,7 +67,6 @@ export default async function handler(request: Request) {
 
     if (!response.ok) {
         if (response.status === 404) {
-             // Repo or path might be empty or not exist yet
              return new Response(JSON.stringify({ ok: true, accounts: [] }), { status: 200, headers });
         }
         throw new Error(`GitHub API responded with ${response.status}`);
@@ -72,13 +83,14 @@ export default async function handler(request: Request) {
         f.name && f.name.startsWith('config_') && f.name.endsWith('.json')
     );
 
-    // 3. Fetch content for each file to get status details (Parallel)
-    const accountsData = await Promise.all(accountFiles.map(async (file: any) => {
+    const validAccounts = [];
+
+    // 3. Sequential Fetch to prevent Rate Limiting / Edge Resource Exhaustion
+    // (Promise.all can cause "ReadableStreamDefaultController" errors if too many requests fire at once in strict envs)
+    for (const file of accountFiles) {
         try {
-            // Extract account name: config_br14_Nick.json -> br14_Nick
             const accountName = file.name.replace(/^config_/, '').replace(/\.json$/, '');
             
-            // Fetch content using the API URL provided in the file object (Authenticated)
             const contentRes = await fetch(file.url, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -86,50 +98,37 @@ export default async function handler(request: Request) {
                 },
             });
             
-            if (!contentRes.ok) {
-                console.warn(`Failed to fetch content for ${file.name}: ${contentRes.status}`);
-                return null;
-            }
+            if (!contentRes.ok) continue;
 
             const fileData = await contentRes.json();
+            if (!fileData.content) continue;
             
-            if (!fileData.content) return null;
-            
-            // Robust UTF-8 Decoding
-            // 1. Decode Base64 to binary string (latin1)
-            const rawContent = atob(fileData.content.replace(/\n/g, ''));
-            // 2. Convert binary string to Uint8Array
-            const bytes = Uint8Array.from(rawContent, c => c.charCodeAt(0));
-            // 3. Decode UTF-8 bytes to string
-            const decodedContent = new TextDecoder().decode(bytes);
+            const decodedContent = safeDecode(fileData.content);
+            if (!decodedContent) continue;
             
             const json = JSON.parse(decodedContent) as ConfigFile;
 
-            return {
+            validAccounts.push({
                 account: accountName,
                 enabled: json.enabled ?? false,
                 farmEnabled: json.farm?.enabled ?? false,
                 intervalMin: json.farm?.interval_min ?? null,
                 intervalMax: json.farm?.interval_max ?? null,
                 updatedAt: json.updated_at ?? null,
-                // Without a database, we cannot persist online state between requests.
-                // Defaulting to false. A KV store (Vercel KV/Redis) is needed for this feature.
                 online: false, 
                 lastSeen: null 
-            };
+            });
         } catch (e) {
-            console.error(`Failed to parse config for ${file.name}`, e);
-            return null;
+            console.error(`Error processing ${file.name}`, e);
+            // Continue to next file on error
         }
-    }));
-
-    // Filter out any failed fetches (nulls)
-    const validAccounts = accountsData.filter(a => a !== null);
+    }
 
     return new Response(JSON.stringify({ ok: true, accounts: validAccounts }), { status: 200, headers });
 
   } catch (error: any) {
-    console.error("List accounts error:", error);
-    return new Response(JSON.stringify({ ok: false, error: error.message }), { status: 500, headers });
+    console.error("List accounts fatal error:", error);
+    // Return a clean 500 JSON
+    return new Response(JSON.stringify({ ok: false, error: error.message || 'Internal Error' }), { status: 500, headers });
   }
 }

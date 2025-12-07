@@ -1,8 +1,46 @@
-import { DEFAULT_CONFIG } from '../types';
+// Inline constants to avoid import issues in Edge Runtime
+const DEFAULT_CONFIG = {
+  enabled: true,
+  farm_level: 'custom',
+  farm: {
+    enabled: true,
+    interval_min: 600,
+    interval_max: 637,
+    shuffle_cities: true,
+  },
+  market: {
+    enabled: false,
+    target_town_id: "",
+    send_wood: true,
+    send_stone: true,
+    send_silver: true,
+    max_storage_percent: 80,
+    max_send_per_trip: 5000,
+    check_interval: 300,
+    delay_between_trips: 120,
+    split_equally: true,
+  },
+};
 
 export const config = {
   runtime: 'edge',
 };
+
+// Robust Base64 decode helper
+function safeDecode(base64: string): string {
+  try {
+    const raw = atob(base64.replace(/[\n\r]/g, ''));
+    const bytes = Uint8Array.from(raw, c => c.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch (e) {
+    // Try simple atob as fallback
+    try {
+        return atob(base64.replace(/[\n\r]/g, ''));
+    } catch (e2) {
+        return "";
+    }
+  }
+}
 
 export default async function handler(request: Request) {
   const headers = {
@@ -60,12 +98,18 @@ export default async function handler(request: Request) {
 
     const data = await response.json();
     
-    // Robust UTF-8 Decoding
-    const rawContent = atob(data.content.replace(/\n/g, ''));
-    const bytes = Uint8Array.from(rawContent, c => c.charCodeAt(0));
-    const decodedContent = new TextDecoder().decode(bytes);
-    
-    const jsonConfig = JSON.parse(decodedContent);
+    let decodedContent = safeDecode(data.content || '');
+    if (!decodedContent) {
+         throw new Error("Failed to decode file content");
+    }
+
+    let jsonConfig;
+    try {
+        jsonConfig = JSON.parse(decodedContent);
+    } catch (e) {
+        // Handle malformed JSON in file
+        jsonConfig = {};
+    }
 
     // Merge with DEFAULT_CONFIG
     const finalConfig = {
