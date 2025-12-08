@@ -4,7 +4,7 @@
   "farm": {
     "enabled": true,
     "interval_min": 600,
-    "interval_max": 610,
+    "interval_max": 612,
     "shuffle_cities": true
   },
   "market": {
@@ -19,5 +19,5 @@
     "delay_between_trips": 120,
     "split_equally": true
   },
-  "updated_at": "2025-12-07T16:46:48.768Z"
+  "updated_at": "2025-12-08T19:20:58.247Z"
 }
