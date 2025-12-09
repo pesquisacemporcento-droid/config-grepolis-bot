@@ -10,14 +10,14 @@
   "market": {
     "enabled": true,
     "target_town_id": "6263",
-    "send_wood": true,
+    "send_wood": false,
     "send_stone": true,
-    "send_silver": true,
+    "send_silver": false,
     "max_storage_percent": 80,
     "max_send_per_trip": 2500,
     "check_interval": 10,
     "delay_between_trips": 120,
     "split_equally": true
   },
-  "updated_at": "2025-12-09T22:00:29.403Z"
+  "updated_at": "2025-12-09T23:19:07.654Z"
 }
