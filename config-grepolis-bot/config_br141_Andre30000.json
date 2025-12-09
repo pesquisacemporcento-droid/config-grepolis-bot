@@ -15,9 +15,9 @@
     "send_silver": true,
     "max_storage_percent": 80,
     "max_send_per_trip": 5000,
-    "check_interval": 300,
+    "check_interval": 150,
     "delay_between_trips": 120,
     "split_equally": true
   },
-  "updated_at": "2025-12-09T16:33:07.596Z"
+  "updated_at": "2025-12-09T16:33:13.642Z"
 }
