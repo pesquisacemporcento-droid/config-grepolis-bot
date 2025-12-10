@@ -11,7 +11,7 @@
     "enabled": true,
     "target_town_id": "6264",
     "send_wood": true,
-    "send_stone": false,
+    "send_stone": true,
     "send_silver": true,
     "max_storage_percent": 80,
     "max_send_per_trip": 2500,
@@ -19,5 +19,5 @@
     "delay_between_trips": 120,
     "split_equally": true
   },
-  "updated_at": "2025-12-10T16:06:15.701Z"
+  "updated_at": "2025-12-10T16:06:18.094Z"
 }
