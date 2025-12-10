@@ -2,9 +2,9 @@
   "enabled": true,
   "farm_level": "custom",
   "farm": {
-    "enabled": false,
-    "interval_min": 10,
-    "interval_max": 20,
+    "enabled": true,
+    "interval_min": 300,
+    "interval_max": 307,
     "shuffle_cities": true
   },
   "market": {
@@ -19,5 +19,5 @@
     "delay_between_trips": 120,
     "split_equally": true
   },
-  "updated_at": "2025-12-09T21:40:18.061Z"
+  "updated_at": "2025-12-10T16:08:12.499Z"
 }
