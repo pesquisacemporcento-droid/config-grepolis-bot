@@ -8,7 +8,7 @@
     "shuffle_cities": true
   },
   "market": {
-    "enabled": false,
+    "enabled": true,
     "target_town_id": "760",
     "send_wood": true,
     "send_stone": false,
@@ -19,5 +19,5 @@
     "delay_between_trips": 120,
     "split_equally": true
   },
-  "updated_at": "2026-01-24T18:46:38.774Z"
+  "updated_at": "2026-01-26T20:04:10.268Z"
 }
