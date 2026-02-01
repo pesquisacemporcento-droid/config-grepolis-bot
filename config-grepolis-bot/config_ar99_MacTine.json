@@ -14,10 +14,10 @@
     "send_stone": true,
     "send_silver": true,
     "max_storage_percent": 80,
-    "max_send_per_trip": 4500,
+    "max_send_per_trip": 5500,
     "check_interval": 300,
     "delay_between_trips": 120,
     "split_equally": true
   },
-  "updated_at": "2026-02-01T19:30:27.832Z"
+  "updated_at": "2026-02-01T19:30:40.429Z"
 }
