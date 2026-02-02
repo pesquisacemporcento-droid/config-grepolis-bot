@@ -4,12 +4,12 @@
   "farm": {
     "enabled": true,
     "interval_min": 600,
-    "interval_max": 637,
+    "interval_max": 610,
     "shuffle_cities": true
   },
   "market": {
     "enabled": true,
-    "target_town_id": "1451",
+    "target_town_id": "1339",
     "send_wood": true,
     "send_stone": true,
     "send_silver": true,
@@ -19,5 +19,5 @@
     "delay_between_trips": 120,
     "split_equally": true
   },
-  "updated_at": "2026-02-02T17:51:47.760Z"
+  "updated_at": "2026-02-02T19:23:32.823Z"
 }
