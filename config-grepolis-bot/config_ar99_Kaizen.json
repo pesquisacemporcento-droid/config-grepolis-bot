@@ -4,20 +4,20 @@
   "farm": {
     "enabled": true,
     "interval_min": 600,
-    "interval_max": 605,
+    "interval_max": 637,
     "shuffle_cities": true
   },
   "market": {
-    "enabled": false,
-    "target_town_id": "1339",
+    "enabled": true,
+    "target_town_id": "1586",
     "send_wood": true,
     "send_stone": true,
     "send_silver": true,
     "max_storage_percent": 80,
-    "max_send_per_trip": 7500,
+    "max_send_per_trip": 5000,
     "check_interval": 300,
     "delay_between_trips": 120,
     "split_equally": true
   },
-  "updated_at": "2026-02-02T20:09:50.854Z"
+  "updated_at": "2026-02-04T17:58:42.689Z"
 }
